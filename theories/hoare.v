@@ -168,36 +168,42 @@ apply: (@denote_ind _ _ _ _  (fun X => preserves_invariant invariant)).
 - exact: H.
 Qed.
 
+From mathcomp Require Import reals.
+From infotheo Require Import fsdist realType_ext.
+
 Section hoare_of_contract.
-Context {Fx F : effect} `{F -<? Fx} (S : Type) (c : contract F S).
+Context {R : realType} {Fx F : effect} `{F -<? Fx} (S : Type) (c : contract R F S).
 
 Local Open Scope classical_set_scope.
 
 Definition hoare_of_contract : Fx ~~> hoare S :=
   fun U cmd => mk_hoare
-    (gen_requirement c ^~ cmd)
-    (fun s (x : U) s' => s' = gen_state_update c s cmd x /\
-                         gen_promise c s cmd x).
+    (gen_requirement R c ^~ cmd)
+    (fun s (x : U) s' => pure1 R s' = gen_state_update R c s cmd x /\
+                         gen_promise R c s cmd x).
 
 Definition freer_to_hoare {M : freerMonad Fx} : M ~~> hoare S :=
   denote _ hoare_of_contract.
 
 End hoare_of_contract.
 Arguments hoare_of_contract : simpl never.
-Arguments freer_to_hoare {Fx F _ M S} c {U} : rename, simpl never.
+Arguments freer_to_hoare {R Fx F _ M S} c {U} : rename, simpl never.
 
 (** A Hoare triple can be interpreted from the program `p`
   * through the contract `c`.
   *)
-Notation "c |> p" := (@freer_to_hoare _ _ _ _ c _ _ p)
+Notation "c |> p" := (@freer_to_hoare _ _ _ _ _ c _ _ p)
   (at level 60, no associativity).
 
 Section freer_to_hoare_lemmas.
-Context {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx}
-    (S : Type) (c : contract F S).
+Context {R : realType} {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx}
+ (S : Type) (c : contract R F S).
+
+(* Context {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx} *)
+    (* (S : Type) (c : contract F S). *)
 
 Local Open Scope classical_set_scope.
-
+Check c.
 Lemma pre_ret {U : Type} (u : U) : pre (c |> (Ret u : M _)) = [set: S].
 Proof. by rewrite /freer_to_hoare denote_ret. Qed.
 
@@ -217,8 +223,8 @@ Qed.
 End freer_to_hoare_lemmas.
 
 Section GenericToHoareSection.
-Context {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx}
-    (S : Type) (c : contract F S).
+Context {R : realType} {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx}
+    (S : Type) (c : contract R F S).
 
 Lemma to_hoare_triggerE (a : Type) (cmd : Fx a) :
   (c |> (trigger a cmd : M _)) = hoare_of_contract c cmd.
@@ -276,9 +282,9 @@ End WhenFacts.
 
 End GenericToHoareSection.
 
-Lemma to_hoare_preserves_invariant {Fx F : effect} `{F -<? Fx}
+Lemma to_hoare_preserves_invariant {R : realType} {Fx F : effect} `{F -<? Fx}
   {M : inductiveFreerMonad Fx} {S : UU0}
-  (invariant : set S) (c : contract F S)
+  (invariant : set S) (c : contract R F S)
   (handler_preserves : forall (A : UU0) (cmd : Fx A),
     preserves_invariant invariant (hoare_of_contract c cmd)) (A : UU0) (p : M A) :
   preserves_invariant invariant (c |> p).
@@ -287,8 +293,8 @@ Proof. exact: denote_preserves_invariant. Qed.
 (** ** Trigger Views *)
 
 Section contract_trigger_helpers.
-Context {Fx F : effect} `{F -< Fx} {M : freerMonad Fx}
-    (S : Type) (c : contract F S) {A : Type}.
+Context {R : realType} {Fx F : effect} `{F -< Fx} {M : freerMonad Fx}
+    (S : Type) (c : contract R F S) {A : Type}.
 
 Lemma pre_to_hoare_triggerP (cmd : F A) (s : S) :
   pre (c |> (ptrigger cmd : M _)) s <->
@@ -296,10 +302,8 @@ Lemma pre_to_hoare_triggerP (cmd : F A) (s : S) :
 Proof. by rewrite to_hoare_triggerE /= provided_callerP. Qed.
 
 Lemma post_to_hoare_triggerP (cmd : F A) (s : S) (a : A) (s' : S) :
-  post (c |> (ptrigger cmd : M _))
-    s a s' <->
-  s' = state_update c s cmd a /\
-  promise c s cmd a.
+  post (c |> (ptrigger cmd : M _)) s a s' <->
+  pure1 R s' = state_update c s cmd a /\ promise c s cmd a.
 Proof. by rewrite to_hoare_triggerE /= provided_calleeP. Qed.
 
 End contract_trigger_helpers.
@@ -337,8 +341,8 @@ Definition providesOnlyF (n : M A) := {m | freerSem (F := F) m = n}.
 End split_effects.
 
 Section contract_correspondance.
-Context {Fx F G : effect} `{F ;; G -<< Fx} {M : freerMonad Fx}
-  {T U : UU0} (cf : contract F T) (cg : contract G T).
+Context {R : realType} {Fx F G : effect} `{F ;; G -<< Fx} {M : freerMonad Fx}
+  {T U : UU0} (cf : contract R F T) (cg : contract R G T).
 
 Lemma freer_contract_left (m : M U) :
   providesOnlyF (F:=F) m -> (cf -^- cg |> m) = (cf |> m).
@@ -397,13 +401,13 @@ elim: syntax=>
 Qed.
 End syntax_inclusion.
 Section lift_shared_contract.
-Context {Fx Fg F G : effect} `{F ;; G -<< Fg} `{Fg -< Fx}.
+Context {R : realType} {Fx Fg F G : effect} `{F ;; G -<< Fg} `{Fg -< Fx}.
 Context {M : freerMonad Fx} {T U : Type}.
-Variables (cf : contract F T) (cg : contract G T).
+Variables (cf : contract R F T) (cg : contract R G T).
 
 Lemma freer_contract_prodT (m : M U) :
-  ((cf -^- cg : contract Fg T) |> m) =
-  ((cf -^- cg : contract Fx T) |> m).
+  ((cf -^- cg : contract R Fg T) |> m) =
+  ((cf -^- cg : contract R Fx T) |> m).
 Proof.
 rewrite /freer_to_hoare.
 congr (denote _ _ U m).

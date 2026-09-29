@@ -6,6 +6,8 @@
 
 From FreerDPS Require Import init effect freer contract hoare.
 From monae Require Import hierarchy.
+From mathcomp Require Import reals.
+From infotheo Require Import fsdist realType_ext.
 
 (** * Definition *)
 
@@ -28,12 +30,12 @@ From monae Require Import hierarchy.
 Definition component (F E : effect) `{M : freerMonad E} : Type :=
   F ~~> M.
 
-Definition correct_component {Ex E F : effect} `{E -<? Ex} {M : freerMonad Ex}
+Definition correct_component {R : realType} {Ex E F : effect} `{E -<? Ex} {M : freerMonad Ex}
   {SF SE : Type}
-    (c : component F Ex) (cF : contract F SF)
-    (cE : contract E SE) (pred : SF -> SE -> Prop) :
+    (c : component F Ex) (cF : contract R F SF)
+    (cE : contract R E SE) (pred : dist SF -> SE -> Prop) :
   Prop :=
-  forall (sF : SF) (sE : SE) (init : pred sF sE) (T : Type)
+  forall (sF : SF) (sE : SE) (init : pred (pure1 R sF) sE) (T : Type)
       (cmd : F T) (o_caller : requirement cF sF cmd),
     pre (cE |> c T cmd) sE /\
     forall (t : T) (sE' : SE),

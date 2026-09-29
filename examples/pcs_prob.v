@@ -1,12 +1,17 @@
 From mathcomp Require Import boot order algebra interval_inference.
-From mathcomp Require Import boolp reals.
-From infotheo Require Import realType_ext.
+From mathcomp Require Import classical_sets boolp reals.
+From infotheo Require Import fsdist realType_ext.
 From monae Require Import preamble hierarchy.
 From FreerDPS Require Import all_freerdps ping_common ping_client_serv.
+From HB Require Import structures.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
+
+Local Abbreviation R := ping_client_serv.default_R.
+
+Local Open Scope fsdist_scope.
 
 Local Open Scope monae_scope.
 Local Open Scope proba_scope.
@@ -59,25 +64,46 @@ Local Open Scope nat_scope.
 (*                                                                            *)
 (******************************************************************************)
 
+
 Import NetworkChannelMod.
+HB.instance Definition _ := gen_eqMixin net_state.
+HB.instance Definition _ := gen_choiceMixin net_state.
 
 Section flip_contract.
-Context {R : realType}.
 
+Definition coin (p : {prob R}) : fsdist R bool :=
+  fsdist_conv p (fsdist1 true) (fsdist1 false).
 
+(*
+Inductive NFlipE : effect :=
+  flipe (p : {prob R}) : NFlipE bool. *)
+
+Definition server_keep_or_drop (p : {prob R}) (ns : net_state) :
+  dist net_state :=
+match ns with
+| mk_chan _ cQ => fsdist_conv p (fsdist1 ns) (fsdist1 (mk_chan None cQ))
+end.
+Definition client_keep_or_drop (p : {prob R}) (ns : net_state) :
+  dist net_state :=
+match ns with
+| mk_chan sQ _ => fsdist_conv p (fsdist1 ns) (fsdist1 (mk_chan sQ None))
+end.
+
+Definition keep_or_drop p ns (q: bool) :=
+if q then server_keep_or_drop p ns
+else client_keep_or_drop p ns.
 
 Definition flip_step (server_bound : bool) (ns : net_state) :
-  forall X, @FlipEff R X -> X -> net_state
+  forall X, @FlipEff R X -> X -> dist net_state
   (* todo: make this dist :      ^^^^^^^^^ *)
-:= fun X op =>
-  match op with
-  | flipe _ => fun keep => drop_new_packet ns keep server_bound
+:= fun T op _ => match op with
+| flipe p => keep_or_drop p ns server_bound
+end.
   (* avec prob p :
   dist p {
   - keep => Ret ns
   - drop => drop_new_packet ns server_bound
   } *)
-  end.
 
 Definition selected_queue (server_bound : bool) ns : packet :=
   if server_bound then serverQ ns else clientQ ns.
@@ -98,14 +124,16 @@ Inductive flip_promise (server_bound : bool) (ns : net_state) :
   | DROP_IT (p : {prob R}) (H : selected_queue server_bound ns = None) : flip_promise server_bound ns (flipe p) false.
 
 Definition flip_contract (server_bound : bool) :
-    contract (@FlipEff R) net_state :=
+    contract R (@FlipEff R) net_state :=
   make_contract (flip_step server_bound)
     (flip_requirement server_bound) (flip_promise server_bound).
 
 End flip_contract.
 Section syntax.
-Context {R: realType} {Fx : effect} `{@FlipEff R -< Fx}.
+Context {Fx : effect} `{@FlipEff R -< Fx}.
 Context {M : freerMonad Fx}.
+
+Print H.
 
 Lemma syn_flip (p : {prob R}) : providesOnlyF (F:=@FlipEff R) (M := M) (flip p).
 Proof. by exists (frTrigger (inj (flipe p))). Qed.
@@ -117,7 +145,7 @@ End syntax.
 
 Module Export ProbPingPongM.
 Section client_program.
-Context {R : realType} {Fx : effect}.
+Context {Fx : effect}.
 Context `{@FlipEff R ;; client_api -<< Fx} {M : freerMonad Fx}.
 
 Definition transmit (psucc : {prob R}) (program : M unit) : M unit :=
@@ -127,11 +155,12 @@ Definition transmit (psucc : {prob R}) (program : M unit) : M unit :=
 Variable (psucc : {prob R}).
 
 Definition psend : M unit := transmit psucc send.
-Definition C : M (option msg) := psend >>= fun=> wait.
+Check psend.
+Definition C : M (option msg) := psend >> wait.
 End client_program.
 
 Section server_program.
-Context {R : realType} {Fx : effect}.
+Context {Fx : effect}.
 Context `{@FlipEff R ;; server_api -<< Fx} {M : freerMonad Fx}.
 
 Variable (psucc : {prob R}).
@@ -150,23 +179,29 @@ Import ccm scm.
 (** ** Packet Delivery Specification *)
 
 Section flip_respectful_and_run_lemmas.
-Context {R : realType} {Fx : effect} `{@FlipEff R -< Fx}.
+Context {Fx : effect} `{@FlipEff R -< Fx}.
 Context {M : freerMonad Fx}.
 Implicit Types (psucc : {prob R}).
 
 Fact flip_respect server_bound psucc (net : net_state)
     (queued : selected_queue server_bound net = expected_packet server_bound):
-  pre (@flip_contract R server_bound |> (flip psucc : M _)) net.
+  pre (flip_contract server_bound |> (flip psucc : M _)) net.
 Proof.
 by rewrite to_hoare_triggerE /= provided_callerP /= /flip_requirement.
 Qed.
 
+(* TODO: This lemma needs to be updated to fit the new style *)
 Fact flip_run server_bound psucc (ins fns : net_state) keep
-    (run : post (@flip_contract R server_bound |> (flip psucc : M _))
+    (run : post (flip_contract server_bound |> (flip psucc : M _))
       ins keep fns) :
-  fns = drop_new_packet ins keep server_bound.
+  keep_or_drop psucc fns server_bound = keep_or_drop psucc ins server_bound.
 Proof.
-by move: run; rewrite to_hoare_triggerE /= provided_calleeP=> -[].
+move: run.
+ rewrite to_hoare_triggerE /= provided_calleeP=> -[] /= <-.
+ inversion 1; subst.
+
+ rewrite /flip_promise.
+
 Qed.
 End flip_respectful_and_run_lemmas.
 
@@ -174,14 +209,14 @@ End flip_respectful_and_run_lemmas.
 
 Module pccm.
 Section client_respectful_and_run_lemmas.
-Context {R : realType} {Fx ClientF: effect}.
+Context {Fx ClientF : effect}.
 Context `{@FlipEff R ;; client_api -<< Fx} `{ClientF -< Fx} {M : freerMonad Fx}.
 
 Implicit Types (psucc : {prob R}).
 
 
 Fact psend_respect psucc (net : net_state) :
-  pre (@flip_contract R true -^- client_c |> (psend psucc : M _)) net.
+  pre (flip_contract true -^- client_c |> (psend psucc : M _)) net.
 Proof.
 rewrite !freer_to_hoare_bindE freer_contract_right //.
 split; first exact: send_respect.
@@ -193,7 +228,8 @@ split.
 Qed.
 
 Fact psend_run psucc (ins fns : net_state) (u : unit)
-    (run : post (@flip_contract R true -^- client_c |> (psend psucc : M _)) ins u fns) :
+    (run : post (flip_contract true -^- client_c |> (psend psucc : M _))
+      ins u fns) :
   fns.(clientQ) = ins.(clientQ) /\
   fns.(serverQ) != Some Pong.
 Proof.
@@ -201,14 +237,14 @@ move: run.
 rewrite !freer_to_hoare_bindE freer_contract_right //.
 case=> [[]] [[sQ cQ]] [] /send_run /= [-> ->].
 rewrite freer_contract_left //.
-case=> [keep] [net] [] /flip_run ->.
+case=> [keep] [net] [] /flip_run /=. /fsdist.fsdist1_inj ->.
 rewrite post_ret=> -[_ <-] /=.
 by case: keep; split; apply/eqP.
 Qed.
 
 Lemma pre_c psucc (net : net_state)
     (coh : clientQ net != Some Ping) :
-  pre (@flip_contract R true -^- client_c |> (C psucc : M _)) net.
+  pre (flip_contract true -^- client_c |> (C psucc : M _)) net.
 Proof.
 rewrite /C freer_to_hoare_bindE; split.
   exact: psend_respect.
@@ -218,7 +254,8 @@ exact/wait_respect/coh.
 Qed.
 
 Lemma post_c psucc (ins fns : net_state) (result : option msg)
-    (run : post (@flip_contract R true -^- client_c |> (C psucc : M _)) ins result fns) :
+    (run : post (flip_contract true -^- client_c |> (C psucc : M _))
+      ins result fns) :
   fns.(clientQ) = None /\ (fns.(serverQ) != Some Pong).
 Proof.
 move: run; rewrite freer_to_hoare_bindE.
@@ -233,13 +270,13 @@ End pccm.
 
 Module pscm.
 Section server_respectful_and_run_lemmas.
-Context {R : realType} {Fx : effect}.
+Context {Fx : effect}.
 Context `{@FlipEff R ;; server_api -<< Fx} {M : freerMonad Fx}.
 
 Implicit Types (psucc : {prob R}).
 
 Fact preply_respect psucc (net : net_state) :
-  pre ( @flip_contract R false -^- server_c |> (preply psucc : M _)) net.
+  pre (flip_contract false -^- server_c |> (preply psucc : M _)) net.
 Proof.
 rewrite freer_to_hoare_bindE freer_contract_right //.
 split; first exact: reply_respect.
@@ -249,7 +286,8 @@ exact: flip_respect.
 Qed.
 
 Fact preply_run psucc (ins fns : net_state) keep
-    (run : post ( @flip_contract R false -^- server_c |> (preply psucc : M _)) ins keep fns) :
+    (run : post (flip_contract false -^- server_c |> (preply psucc : M _))
+      ins keep fns) :
   fns.(clientQ) =
     (if keep then clientQ (fill_clientQ Pong ins) else None) /\
   fns.(serverQ) = ins.(serverQ).
@@ -263,7 +301,7 @@ Qed.
 Lemma s_p_respect psucc (net : net_state)
     (coh : serverQ net != Some Pong) :
     (* = Some Ping \/ serverQ net = None) : *)
-  pre ( @flip_contract R false -^- server_c |> (pS_p psucc : M _)) net.
+  pre (flip_contract false -^- server_c |> (pS_p psucc : M _)) net.
 Proof.
 rewrite freer_to_hoare_bindE freer_contract_right //.
 split; first exact/recv_respect/coh.
@@ -275,7 +313,8 @@ all: by rewrite pre_ret.
 Qed.
 
 Lemma s_p_run psucc (ins fns : net_state) (result : option msg)
-  (run : post ( @flip_contract R false -^- server_c |> (pS_p psucc : M _)) ins result fns) :
+    (run : post (flip_contract false -^- server_c |> (pS_p psucc : M _))
+      ins result fns) :
   match result with
   | Some Ping => fns.(clientQ) != Some Ping
   (* clientQ (fill_clientQ Pong ins) \/ fns.(clientQ) = None *)
@@ -297,7 +336,7 @@ Definition server_ready (net : net_state) := serverQ net = Some Ping.
 
 Lemma s_respect psucc fuel (net : net_state)
   (coh : forall net, serverQ net != Some Pong) :
-   pre ( @flip_contract R false -^- server_c |> (S_ psucc fuel : M _)) net.
+   pre (flip_contract false -^- server_c |> (S_ psucc fuel : M _)) net.
 Proof.
 move: fuel net; elim=> [|fuel IHfuel] net.
 all: rewrite /S_ /= freer_to_hoare_bindE; split; [exact: s_p_respect |].
@@ -312,19 +351,19 @@ End pscm.
 Import pccm pscm.
 
 Section protocol_contract.
-Context {R : realType} {ClientF ServerF ProtoF : effect}.
+Context {ClientF ServerF ProtoF : effect}.
 Context `{@FlipEff R ;; client_api -<< ClientF}.
 Context `{@FlipEff R ;; server_api -<< ServerF}.
 Context `{ClientF ;; ServerF -<< ProtoF}.
 
-Definition sharedP : contract ProtoF net_state :=
-  (@flip_contract R true -^- client_c) -^-
-  ( @flip_contract R false -^- server_c).
+Definition sharedP : contract R ProtoF net_state :=
+  (flip_contract true -^- client_c) -^-
+  (flip_contract false -^- server_c).
 End protocol_contract.
 
 Module Import ProbProtocolSyntax.
 Section syntax.
-Context {R : realType} {ClientF ServerF ProtoF : effect}.
+Context {ClientF ServerF ProtoF : effect}.
 Context `{@FlipEff R ;; client_api -<< ClientF}.
 Context `{@FlipEff R ;; server_api -<< ServerF}.
 Context `{ClientF ;; ServerF -<< ProtoF} {M : freerMonad ProtoF}.
@@ -361,7 +400,7 @@ End ProbProtocolSyntax.
 
 Module ProbProtocolM.
 Section protocol.
-Context {R : realType} {ClientF ServerF ProtoF : effect}.
+Context {ClientF ServerF ProtoF : effect}.
 Context `{@FlipEff R ;; client_api -<< ClientF}.
 Context `{@FlipEff R ;; server_api -<< ServerF}.
 Context `{ClientF ;; ServerF -<< ProtoF} {M : freerMonad ProtoF}.
@@ -385,8 +424,8 @@ Definition protocol : component (M := M) proto_api ProtoF :=
           end)
     end.
 
-Definition protocol_contract : contract ProtoF net_state :=
-  sharedP (R := R) (ClientF := ClientF) (ServerF := ServerF).
+Definition protocol_contract : contract R ProtoF net_state :=
+  sharedP (ClientF := ClientF) (ServerF := ServerF).
 
 Definition protocol_inv (net : net_state) := (serverQ net = None) /\ (clientQ net = None).
 
@@ -431,7 +470,7 @@ all: rewrite post_ret=> -[_ <-]; split=> //.
 Qed.
 
 Theorem prob_ping_protocol_correct :
-  correct_component protocol (no_contract proto_api) protocol_contract
+  correct_component protocol (no_contract R proto_api) protocol_contract
     (fun=> protocol_inv).
 Proof.
 move=> [] net inv ? [] []; split=> [|result net' run] /=.
