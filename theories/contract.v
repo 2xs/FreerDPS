@@ -43,6 +43,8 @@ Context (F : effect) (T : Type).
 
 Record contract : Type := make_contract {
   state_update : T -> forall U : Type, F U -> U -> T ;
+  (* prob makes this one dist :                    ^ *)
+  (* change from this point and see how it goes. *)
   requirement : T -> forall U : Type, F U -> Prop ;
   promise : T -> forall U : Type, F U -> U -> Prop }.
 
