@@ -14,42 +14,54 @@ Follow the instructions on https://github.com/coq-community/templates to regener
 
 This work started as a rewrite/extension of [FreeSpec Core](https://github.com/lthms/FreeSpec) using [monae](https://github.com/affeldt-aist/monae) / ssreflect.
 
-This work has been accepted for presentation to [COMPAS26](https://2026.compas-conference.fr/) (no paper available online).
+# Install
 
-## Meta
+## Libraries
 
-- Author(s):
-  - Hugo Forraz (initial)
-- License: [MIT License](LICENSE)
-- Additional dependencies:
-  - [MathComp](https://math-comp.github.io)
-  - [MathComp Analysis](https://github.com/math-comp/analysis)
-  - Monae
-- Related publication(s):
-  - []() 
+You need to install the following libraries for the project to work :
+- coq 9.0 (it will use rocq as soon as monae makes the move)
+- monae
+- infotheo
+- mathcomp
+- hierarchy builder
 
-## Building and installation instructions
+## Commands
 
-The easiest way to install the latest released version of Freer Equational Reasoning for Distributed and Probabilistic Systems
-is via [OPAM](https://opam.ocaml.org/doc/Install.html):
+Mainly for interns installing it first time :
 
-```shell
-opam repo add rocq-released https://rocq-prover.org/opam/released
-opam install coq-FreerDPS
+```sh
+opam switch create . ocaml-base-compiler.4.14.2
+eval $(opam env)
+opam pin add coq 9.0.0
+eval $(opam env)
+
+opam repo add coq-released https://coq.inria.fr/opam/released
+opam install coq-hierarchy-builder coq-mathcomp-ssreflect coq-mathcomp-algebra coq-mathcomp-character coq-mathcomp-field coq-mathcomp-fingroup coq-mathcomp-solvable coq-mathcomp-classical
 ```
 
-To instead build and install manually, you need to make sure that all the
-libraries this development depends on are installed.  The easiest way to do that
-is still to rely on opam:
+In case monae / infotheo can not be installed through opam, you can clone them from github and fix their versions.
 
-``` shell
-git clone https://github.com/FreerDPS/FreerDPS.git
-cd FreerDPS
-opam repo add rocq-released https://rocq-prover.org/opam/released
-opam install --deps-only .
-make   # or make -j <number-of-cores-on-your-machine> 
-make install
+Versions known to work :
+- monae : dev
+- infotheo : 0.9.6 => [I have a local fork for now](https://github.com/forrazh/infotheo/tree/fix/0.9.6)
+
+You just need to clone the repositories and run :
+
+```sh
+eval $(opam env) # it should be the same switch as the one created above
+oam pin add .
+```
+
+inside the repository.
+
+Once everything is installed, you can run the following commands :
+
+```sh
+coq_makefile -f _CoqProject -o Makefile
+make
 ```
 
 
+# Publications
 
+This work has been submitted to COMPAS and is under reviewing.
