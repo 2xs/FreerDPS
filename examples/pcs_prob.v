@@ -72,13 +72,30 @@ Local Abbreviation R := Rdefinitions.R.
 
 
 Section flip_contract.
-Definition server_keep_or_drop (p : {prob R}) (ns : net_state) :
+
+Lemma fdist1_serverQ (p: {prob R}) nQ n1 n2 :
+fsdist1 nQ = fsdist1 n1 <|p|> fsdist1 n2 ->
+fsdist1 (serverQ nQ) = fsdist1 (serverQ n1) <|p|> fsdist1 (serverQ n2).
+Proof.
+move/(congr1 (fsdistmap serverQ)).
+by rewrite fsdistmap_affine !fsdistmap1.
+Qed.
+
+Lemma fdist1_clientQ (p: {prob R}) nQ n1 n2 :
+fsdist1 nQ = fsdist1 n1 <|p|> fsdist1 n2 ->
+fsdist1 (clientQ nQ) = fsdist1 (clientQ n1) <|p|> fsdist1 (clientQ n2).
+Proof.
+move/(congr1 (fsdistmap clientQ)).
+by rewrite fsdistmap_affine !fsdistmap1.
+Qed.
+
+Definition server_keep_or_drop (p: {prob R}) (ns : net_state) :
   R.-dist net_state :=
 match ns with
 | mk_chan _ cQ => (fsdist1 ns) <| p |> (fsdist1 (mk_chan None cQ))
 end.
 
-Definition client_keep_or_drop (p : {prob R}) (ns : net_state) :
+Definition client_keep_or_drop (p: {prob R}) (ns : net_state) :
   R.-dist net_state :=
 match ns with
 | mk_chan sQ _ => (fsdist1 ns) <| p |> (fsdist1 (mk_chan sQ None))
@@ -90,7 +107,6 @@ else client_keep_or_drop p ns.
 
 Definition flip_step (is_server : bool) (ns : net_state) :
   forall X, @FlipEff R X -> X -> R.-dist net_state
-  (* todo: make this dist :      ^^^^^^^^^ *)
 := fun T op _ => match op with
 | flipe p => keep_or_drop p ns is_server
 end.
@@ -148,13 +164,13 @@ Section client_program.
 Context {Fx : effect}.
 Context `{@FlipEff R ;; client_api -<< Fx} {M : freerMonad Fx}.
 
-Definition transmit (psucc : {prob R}) (program : M unit) : M unit :=
-  program >> (flip psucc >> Ret tt).
-(* send <|| psucc ||> Ret tt. *)
+Definition transmit (p : {prob R}) (program : M unit) : M unit :=
+  program >> (flip p >> Ret tt).
+(* send <|| p ||> Ret tt. *)
 (* TODO: Change to this ^^^ *)
-Variable (psucc : {prob R}).
+Variable (p : {prob R}).
 
-Definition psend : M unit := transmit psucc send.
+Definition psend : M unit := transmit p send.
 Check psend.
 Definition C : M (option msg) := psend >> wait.
 End client_program.
@@ -163,9 +179,9 @@ Section server_program.
 Context {Fx : effect}.
 Context `{@FlipEff R ;; server_api -<< Fx} {M : freerMonad Fx}.
 
-Variable (psucc : {prob R}).
+Variable (p : {prob R}).
 
-Definition preply : M bool := reply >> flip psucc.
+Definition preply : M bool := reply >> flip p.
 Definition pserver : M (option msg) :=
   recv >>= fun inc=> if inc is Some Ping then preply >> Ret inc else Ret inc.
 Arguments pserver : simpl never.
@@ -179,23 +195,23 @@ From Stdlib Require Import Eqdep.
 Section flip_respectful_and_run_lemmas.
 Context {Fx : effect} `{@FlipEff R -< Fx}.
 Context {M : freerMonad Fx}.
-Implicit Types (psucc : {prob R}).
+Implicit Types (p : {prob R}).
 
-Fact flip_respect is_server psucc (net : net_state)
+Fact flip_respect is_server p (net : net_state)
     (queued : select_queue is_server net = expected_packet is_server):
-  pre (flip_contract is_server |~ (flip psucc : M _)) net.
+  pre (flip_contract is_server |~ (flip p : M _)) net.
 Proof.
 by rewrite to_hoare_triggerE /= provided_callerP /= /flip_requirement.
 Qed.
 
 (* TODO: This lemma needs to be updated to fit the new style *)
-Fact flip_run is_server psucc (ins fns : net_state) keep
-    (run : post (flip_contract is_server |~ (flip psucc : M _))
+Fact flip_run is_server p (ins fns : net_state) keep
+    (run : post (flip_contract is_server |~ (flip p : M _))
       ins keep fns) :
-  fsdist1 fns = keep_or_drop psucc ins is_server /\
-  flip_promise is_server ins (flipe psucc) keep.
-  (* fsdist1 fns = keep_or_drop psucc ins is_server. *)
-  (* keep_or_drop psucc fns is_server = keep_or_drop psucc ins is_server. *)
+  fsdist1 fns = keep_or_drop p ins is_server /\
+  flip_promise is_server ins (flipe p) keep.
+  (* fsdist1 fns = keep_or_drop p ins is_server. *)
+  (* keep_or_drop p fns is_server = keep_or_drop p ins is_server. *)
 Proof.
 by move/post_to_hoare_triggerP: run.
 (* move: run. *)
@@ -226,11 +242,39 @@ Section client_respectful_and_run_lemmas.
 Context {Fx ClientF : effect}.
 Context `{@FlipEff R ;; client_api -<< Fx} `{ClientF -< Fx} {M : freerMonad Fx}.
 
-Implicit Types (psucc : {prob R}).
+Implicit Types (p : {prob R}).
+
+(* Hc2 : *)
+(* fsdist1 {| serverQ := s2; clientQ := c2 |} = *)
+(* fsdist1 {| serverQ := None; clientQ := Some Pong |} <|p|>  *)
+(* fsdist1 {| serverQ := None; clientQ := None |} *)
+
+Fact pwait_respect p (net : net_state) :
+    (fsdist1 (clientQ net) =
+      fsdist1 (Some Pong : packet) <| p |> fsdist1 (None : packet)) ->
+  pre (flip_contract true -^- client_c  |~ (wait : M packet)) net.
+Proof.
+move=>coh.
+rewrite freer_contract_right //.
+apply: ccm.wait_respect.
+have := congr1 (fsdistmap (fun ns : packet => ns != Some Ping)) coh.
+rewrite /= fsdistmap_affine !fsdistmap1 /=.
+have -> : (Some Pong: packet) != Some Ping by apply/eqP.
+have -> : ((None : packet) != (Some Ping: packet)) by apply/eqP.
+by rewrite convmm=> /fsdist1_inj ->.
+Qed.
+
+Fact pwait_run (ins fns : net_state) om (run : post (flip_contract true -^- client_c |~ (wait : M _)) ins om fns ) :
+  fns.(clientQ) = None /\ fns.(serverQ) = ins.(serverQ).
+Proof.
+move: run.
+rewrite freer_contract_right //.
+by move/ccm.wait_run.
+Qed.
 
 
-Fact psend_respect psucc (net : net_state) :
-  pre (flip_contract true -^- client_c |~ (psend psucc : M _)) net.
+Fact psend_respect p (net : net_state) :
+  pre (flip_contract true -^- client_c |~ (psend p : M _)) net.
 Proof.
 rewrite !freer_to_hoare_bindE freer_contract_right //.
 split; first exact: send_respect.
@@ -241,14 +285,10 @@ split.
 - by move=> *; rewrite pre_ret.
 Qed.
 
-Fact psend_run psucc (ins fns : net_state) (u : unit)
-    (run : post (flip_contract true -^- client_c |~ (psend psucc : M _))
+Fact psend_run p (ins fns : net_state) (u : unit)
+    (run : post (flip_contract true -^- client_c |~ (psend p : M _))
       ins u fns) :
-fsdist1 fns = server_keep_or_drop psucc (fill_serverQ Ping ins).
-(* fsdist1 fns <|psucc|> fsdist1 {| serverQ := None; clientQ := cQ' |} = *)
-
-  (* fns.(clientQ) = ins.(clientQ) /\
-  fns.(serverQ) != Some Pong. *)
+fsdist1 fns = server_keep_or_drop p (fill_serverQ Ping ins).
 Proof.
 move: run.
 rewrite !freer_to_hoare_bindE freer_contract_right //.
@@ -258,28 +298,23 @@ case=> [keep] [net] [] /flip_run /= [] <- _.
 by rewrite post_ret=> -[? <-] /=.
 Qed.
 
-Lemma pre_c psucc (net : net_state)
-    (coh : clientQ net != Some Ping) :
-  pre (flip_contract true -^- client_c |~ (C psucc : M _)) net.
+Lemma pre_c (p : {prob R}) (net : net_state)
+    (coh : fsdist1 (clientQ net) =
+      fsdist1 (Some Pong : packet) <| p |> fsdist1 (None : packet)) :
+  pre (flip_contract true -^- client_c |~ (C p : M _)) net.
 Proof.
 rewrite /C freer_to_hoare_bindE; split.
   exact: psend_respect.
-move=> [] [sQ cQ].
-move/psend_run=> run.
-have :=
-  congr1 (fsdistmap (fun ns : net_state => clientQ ns != Some Ping)) run.
-rewrite /server_keep_or_drop /= fsdistmap_affine !fsdistmap1 /=.
-rewrite convmm.
-move/fsdist.fsdist1_inj=>Hsame.
-rewrite freer_contract_right //.
-apply/wait_respect.
-by rewrite Hsame.
+move=> [] [sQ cQ] /psend_run /fdist1_clientQ.
+rewrite /= convmm=> /fsdist1_inj same_client.
+apply/(pwait_respect (p:=p)).
+by rewrite /= same_client.
 Qed.
 
-Lemma post_c psucc (ins fns : net_state) (result : option msg)
-    (run : post (flip_contract true -^- client_c |~ (C psucc : M _))
+Lemma post_c p (ins fns : net_state) (result : packet)
+    (run : post (flip_contract true -^- client_c |~ (C p : M _))
       ins result fns) :
-fsdist1 fns = server_keep_or_drop psucc  (mk_chan (Some Ping) None).
+fsdist1 fns = server_keep_or_drop p  (mk_chan (Some Ping) None).
 Proof.
 move: run.
 rewrite freer_to_hoare_bindE.
@@ -288,8 +323,7 @@ move/psend_run=>Hrun.
 rewrite freer_contract_right //.
 move: fns=> [sQ' cQ'] /wait_run=> -[/= -> ->].
 move: (congr1 (fsdistmap (fun ns => mk_chan (serverQ ns) None)) Hrun).
-rewrite /server_keep_or_drop /= fsdistmap_affine !fsdistmap1 /=.
-done.
+by rewrite /server_keep_or_drop /= fsdistmap_affine !fsdistmap1.
 Qed.
 End client_respectful_and_run_lemmas.
 End pccm.
@@ -300,10 +334,24 @@ Section server_respectful_and_run_lemmas.
 Context {Fx : effect}.
 Context `{@FlipEff R ;; server_api -<< Fx} {M : freerMonad Fx}.
 
-Implicit Types (psucc : {prob R}).
+Implicit Types (p : {prob R}).
 
-Fact preply_respect psucc (net : net_state) :
-  pre (flip_contract false -^- server_c |~ (preply psucc : M _)) net.
+Fact precv_respect (p : {prob R}) (net : net_state)
+    (coh : fsdist1 (serverQ net) =
+      fsdist1 (Some Ping : packet) <| p |> fsdist1 (None : packet)) :
+  pre (server_c |~ (recv : M _)) net.
+Proof.
+apply: scm.recv_respect.
+
+have := congr1 (fsdistmap (fun ns : packet => ns != Some Pong)) coh.
+rewrite /= fsdistmap_affine !fsdistmap1 /=.
+have -> : (Some Ping: packet) != Some Pong by apply/eqP.
+have -> : ((None : packet) != (Some Pong: packet)) by apply/eqP.
+by rewrite convmm=> /fsdist1_inj ->.
+Qed.
+
+Fact preply_respect p (net : net_state) :
+  pre (flip_contract false -^- server_c |~ (preply p : M _)) net.
 Proof.
 rewrite freer_to_hoare_bindE freer_contract_right //.
 split; first exact: reply_respect.
@@ -312,10 +360,10 @@ rewrite freer_contract_left //.
 exact: flip_respect.
 Qed.
 
-Fact preply_run psucc (ins fns : net_state) keep
-    (run : post (flip_contract false -^- server_c |~ (preply psucc : M _))
+Fact preply_run p (ins fns : net_state) keep
+    (run : post (flip_contract false -^- server_c |~ (preply p : M _))
       ins keep fns) :
-  fsdist1 fns = client_keep_or_drop psucc (fill_clientQ Pong ins).
+  fsdist1 fns = client_keep_or_drop p (fill_clientQ Pong ins).
 Proof.
 move: run; rewrite freer_to_hoare_bindE freer_contract_right //.
 case=> [[]] [[sQ cQ]] [] /reply_run /= [-> ->].
@@ -323,13 +371,13 @@ rewrite freer_contract_left //.
 by move/flip_run=> [-> _].
 Qed.
 
-Lemma s_p_respect psucc (net : net_state)
-    (coh : serverQ net != Some Pong) :
-    (* = Some Ping \/ serverQ net = None) : *)
-  pre (flip_contract false -^- server_c |~ (pserver psucc : M _)) net.
+Lemma s_p_respect (p : {prob R}) (net : net_state)
+    (coh : fsdist1 (serverQ net) =
+      fsdist1 (Some Ping : packet) <| p |> fsdist1 (None : packet)) :
+  pre (flip_contract false -^- server_c |~ (pserver p : M _)) net.
 Proof.
 rewrite freer_to_hoare_bindE freer_contract_right //.
-split; first exact/recv_respect/coh.
+split; first by exact/(precv_respect (p:=p))/coh.
 move=> [[]|] [sQ cQ] /recv_run /= [-> ->].
 - rewrite freer_to_hoare_bindE; split.
   + exact: preply_respect.
@@ -337,20 +385,23 @@ move=> [[]|] [sQ cQ] /recv_run /= [-> ->].
 all: by rewrite pre_ret.
 Qed.
 
-Lemma s_p_run psucc (ins fns : net_state) (result : option msg)
-    (run : post (flip_contract false -^- server_c |~ (pserver psucc : M _))
+Lemma s_p_run p (ins fns : net_state) (result : packet)
+    (run : post (flip_contract false -^- server_c |~ (pserver p : M _))
       ins result fns) :
   fsdist1 fns =
     if result is Some Ping then
-      client_keep_or_drop psucc (mk_chan None (Some Pong))
+      client_keep_or_drop p (mk_chan None (Some Pong))
     else fsdist1 (mk_chan None (clientQ ins)).
 Proof.
 move: run.
 rewrite freer_to_hoare_bindE freer_contract_right //.
 case=> [[[]|]] [[sQ cQ]] [] /recv_run /= [-> ->].
 - rewrite freer_to_hoare_bindE.
-  case=> [keep] [net] [] /preply_run replied.
-all: by rewrite post_ret=> -[<- <-].
+  case=> [keep] [net] [] /preply_run=> /= replied.
+all: rewrite post_ret.
+all: case.
+all: move=><-.
+all: by move=><-.
 Qed.
 End server_respectful_and_run_lemmas.
 End pscm.
@@ -375,20 +426,20 @@ Context `{@FlipEff R ;; client_api -<< ClientF}.
 Context `{@FlipEff R ;; server_api -<< ServerF}.
 Context `{ClientF ;; ServerF -<< ProtoF} {M : freerMonad ProtoF}.
 
-Lemma syn_psend (psucc : {prob R}) :
-  providesOnlyF (F:=ClientF) (M := M) (psend psucc).
+Lemma syn_psend (p : {prob R}) :
+  providesOnlyF (F:=ClientF) (M := M) (psend p).
 Proof.
 by exists (frBind (frTrigger (inj (SEND Ping)))
-  (fun=> frBind (frTrigger (inj (flipe psucc))) (fun=> frRet tt))).
+  (fun=> frBind (frTrigger (inj (flipe p))) (fun=> frRet tt))).
 Qed.
 
-Lemma syn_s_p (psucc : {prob R}) :
-  providesOnlyF (F:= ServerF) (M := M) (pserver psucc).
+Lemma syn_s_p (p : {prob R}) :
+  providesOnlyF (F:= ServerF) (M := M) (pserver p).
 Proof.
 exists (frBind (frTrigger (inj RECV)) (fun inc=>
   if inc is Some Ping then
     frBind (frBind (frTrigger (inj (RPLY Pong)))
-      (fun=> frTrigger (inj (flipe psucc)))) (fun=> frRet inc)
+      (fun=> frTrigger (inj (flipe p)))) (fun=> frRet inc)
   else frRet inc)).
 rewrite /= /pserver /preply.
 congr (recv >>= _).
@@ -412,7 +463,7 @@ Context `{@FlipEff R ;; client_api -<< ClientF}.
 Context `{@FlipEff R ;; server_api -<< ServerF}.
 Context `{ClientF ;; ServerF -<< ProtoF} {M : freerMonad ProtoF}.
 
-Variable (psucc : {prob R}).
+Variable (p : {prob R}).
 
 (* TODO put in common *)
 Inductive ping_round : effect := one_round : ping_round outcome.
@@ -421,7 +472,7 @@ Definition prob_ping_protocol : component (M := M) ping_round ProtoF :=
   fun _ cmd=>
     match cmd with
     | one_round =>
-        psend psucc >> (pserver psucc >>= fun om=>
+        psend p >> (pserver p >>= fun om=>
           match om with
           | Some Ping => wait >>= fun om=>
             if om is Some Pong then Ret GotPong else Ret LostPong
@@ -444,48 +495,19 @@ rewrite freer_to_hoare_bindE freer_contract_left // freer_contract_prodT.
 split; first by exact: psend_respect.
 move=> [] [s1 c1] /psend_run.
 rewrite /fill_serverQ.
-move=>/= Hs1.
+move=>/= /fdist1_serverQ /= Hs1.
 (* rewrite c0=> /= Hs1. *)
 rewrite freer_to_hoare_bindE freer_contract_right // freer_contract_prodT.
-split.
-- apply/s_p_respect.
-  have := congr1 (fsdistmap (fun ns : net_state => serverQ ns != (Some Pong: packet))) Hs1.
-  rewrite /client_keep_or_drop /= fsdistmap_affine !fsdistmap1 /=.
-    have -> : (Some Ping: packet) != Some Pong by apply/eqP.
-    have -> : ((None : packet) != (Some Pong: packet)) by apply/eqP.
-    rewrite convmm.
-  by move/fsdist1_inj=>->.
+split; first by exact/s_p_respect.
 move=> opm [s2 c2] /s_p_run /=.
 case: opm=> [[]|] Hc2 /=.
-rewrite freer_to_hoare_bindE freer_contract_left //.
-rewrite freer_contract_prodT freer_contract_right //.
-split.
-- apply/wait_respect.
-  have := congr1 (fsdistmap (fun ns : net_state => clientQ ns != Some Ping)) Hc2.
-  rewrite /server_keep_or_drop /= fsdistmap_affine !fsdistmap1 /=.
-    have -> : (Some Pong: packet) != Some Ping by apply/eqP.
-    have -> : ((None : packet) != (Some Ping: packet)) by apply/eqP.
-  rewrite convmm.
-  by move/fsdist1_inj=>->.
+move/fdist1_clientQ: Hc2=>/= Hc2.
+rewrite freer_to_hoare_bindE freer_contract_left // freer_contract_prodT.
+split; first by exact: (pwait_respect (p:=p)).
+rewrite freer_contract_right //.
 move=> opm [s3 c3] /wait_run /= [-> ->].
 case: opm=> [[]|] /=.
 all: by rewrite pre_ret.
-Qed.
-
-Lemma fdist1_serverQ nQ n1 n2 :
-fsdist1 nQ = fsdist1 n1 <|psucc|> fsdist1 n2 ->
-fsdist1 (serverQ nQ) = fsdist1 (serverQ n1) <|psucc|> fsdist1 (serverQ n2).
-Proof.
-move/(congr1 (fsdistmap serverQ)).
-by rewrite fsdistmap_affine !fsdistmap1.
-Qed.
-
-Lemma fdist1_clientQ nQ n1 n2 :
-fsdist1 nQ = fsdist1 n1 <|psucc|> fsdist1 n2 ->
-fsdist1 (clientQ nQ) = fsdist1 (clientQ n1) <|psucc|> fsdist1 (clientQ n2).
-Proof.
-move/(congr1 (fsdistmap clientQ)).
-by rewrite fsdistmap_affine !fsdistmap1.
 Qed.
 
 Lemma post_prob_ping (ins fns : net_state) (result : outcome) :
