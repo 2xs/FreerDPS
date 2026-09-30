@@ -46,8 +46,8 @@ Open Scope monae_scope.
 Declare Scope contract_scope.
 Section tmp.
 Context (R: realType).
-Record contract (F : effect) (T: Type) : Type := make_contract {
-    state_update : T -> forall U : Type, F U -> U -> fsdist R (monad_model.choice_of_Type T);
+Record contract (F : effect) (T: choiceType) : Type := make_contract {
+    state_update : T -> forall U : Type, F U -> U -> fsdist R T;
     requirement : T -> forall U : Type, F U -> Prop ;
     promise : T -> forall U : Type, F U -> U -> Prop }.
 
@@ -57,19 +57,6 @@ Arguments state_update [F T] (c _) [U] (_ _).
 Arguments requirement [F T] (c _) [U] (_).
 Arguments promise [F T] (c _) [U] (_ _).
 
-(* Definition c_dist (R: realType) (T: Type) := fsdist R (monad_model.choice_of_Type T). *)
-Definition dist X := (@fsdist R (monad_model.choice_of_Type X)).
-Definition pure1 {S : Type} (s : S) : dist S:=
-  @fsdist1 R (monad_model.choice_of_Type S) s.
-(* Abbreviation prob_contract R := (contractG (c_dist R)). *)
-(* Abbreviation prob_mk_contract R := (make_contractG (c_dist R) pure_c_dist). *)
-(*  *)
-(* Definition id_dist := @idfun Type. *)
-(* Definition purei {S : Type} (s : S) : *)
-    (* id_dist S := s. *)
-(* Abbreviation contract := (contractG (id_dist)). *)
-(* Abbreviation make_contract := (make_contractG (dist:=id_dist) purei). *)
-
 Bind Scope contract_scope with contract.
 
 (** The most simple contract we can define is the one that requires
@@ -77,11 +64,11 @@ Bind Scope contract_scope with contract.
     given effect, and for the operational semantics which compute results for
     these primitives. *)
 
-Definition make_contract' [F T]
+Definition make_det_contract [F] [T : choiceType]
 (su : T -> forall U : Type, F U -> U -> T)
 (re: T -> forall U : Type, F U -> Prop )
 (pr : T -> forall U : Type, F U -> U -> Prop)
-     : contract F T := make_contract (fun t U fu u => pure1 (su t U fu u)) re pr .
+     : contract F T := make_contract (fun t U fu u => fsdist1 (su t U fu u)) re pr .
 Definition const_witness {F : effect} :=
   fun (u : unit) (T : Type) (cmd : F T) (t : T) => u.
 
@@ -94,7 +81,7 @@ Definition no_promise {F : effect} {S : Type}
   True.
 
 Definition no_contract (F : effect) : contract F unit :=
-  make_contract' const_witness no_requirement no_promise.
+  make_det_contract const_witness no_requirement no_promise.
 
 (** A similar —and as simple— contract is the one that forbids the use of a
     given effect. *)
@@ -106,7 +93,7 @@ Definition do_no_use {F : effect} {S : Type}
 
 Definition forbid_specs (F : effect) : contract F unit :=
   {|
-    state_update := (fun t U fu u => pure1 (const_witness t U fu u))
+    state_update := (fun t U fu u => fsdist1 (const_witness t U fu u))
    ; requirement := do_no_use
    ; promise := no_promise
    |}.
@@ -121,32 +108,32 @@ Definition forbid_specs (F : effect) : contract F unit :=
     contract for [F + E]. *)
 
 Definition gen_state_update {Fx F : effect} `{F -<? Fx}
-    {S T : Type} (c : contract F S)
+    {S: choiceType} {T : Type} (c : contract F S)
     (s : S) (cmd : Fx T) (t : T)
-  : dist S :=
-  if prj cmd is Some cmd then state_update c s cmd t else pure1 s.
+  : R.-dist S :=
+  if prj cmd is Some cmd then state_update c s cmd t else fsdist1 s.
 Arguments gen_state_update : simpl never.
 
-Definition gen_requirement {Fx F : effect} `{F -<? Fx}
-    {S T : Type} (c : contract F S)
+Definition gen_requirement [Fx F] `{F -<? Fx}
+    {S: choiceType} {T : Type} (c : contract F S)
     (s :  S) (cmd : Fx T)
   : Prop :=
   if prj cmd is Some cmd then requirement c s cmd else True.
 
-Definition gen_promise {Fx F : effect} `{F -<? Fx}
-    {S T : Type} (c : contract F S)
+Definition gen_promise [Fx F] `{F -<? Fx}
+    {S: choiceType} {T : Type} (c : contract F S)
     (s :  S) (cmd : Fx T) (t : T)
   : Prop :=
   if prj cmd is Some cmd then promise c s cmd t else True.
 
-Definition dist_pair {A B : Type} (p : dist A) (q : dist B) :
-    dist (A * B) :=
+Definition dist_pair {A B : choiceType} (p : R.-dist A) (q : R.-dist B) :
+    R.-dist (A * B) :=
   fsdistbind p (fun a =>
-    fsdistmap (A:=monad_model.choice_of_Type B)
-      (B:=monad_model.choice_of_Type (A * B)) (fun b => (a, b)) q).
+    fsdistmap (A:=B)
+      (B:=(A * B)) (fun b => (a, b)) q).
 
 Definition contractprod {Fx F E : effect} `{F -< Fx, E -< Fx}
-    {ΩF ΩE : Type}
+    {ΩF ΩE : choiceType}
     (ci : contract F ΩF) (cj : contract E ΩE)
   : contract Fx (ΩF * ΩE) :=
   {| state_update := fun (s : ΩF * ΩE) (T : Type) (cmd : Fx T) (t : T) =>
@@ -165,7 +152,7 @@ Infix "-*-" := contractprod (at level 20) : contract_scope .
 (** We also introduce a second composition operator which shares the
     witness state among its two operands. *)
 Definition sharedcontractprod {Fx F E : effect} `{F ;; E -<< Fx}
-    {S : Type} (ci : contract F S) (cj : contract E S)
+    {S : choiceType} (ci : contract F S) (cj : contract E S)
   : contract Fx S :=
   {|
   state_update :=
@@ -174,7 +161,7 @@ Definition sharedcontractprod {Fx F E : effect} `{F ;; E -<< Fx}
          will be right associative *)
       match prj (F:=F) cmd with
       | Some cmd => state_update ci s cmd t
-      | _ => if prj (F:=E) cmd is Some cmd then state_update cj s cmd t else pure1 s
+      | _ => if prj (F:=E) cmd is Some cmd then state_update cj s cmd t else fsdist1 s
       end;
   requirement :=
     fun (s : S) (T : Type) (cmd : Fx T) =>
@@ -221,7 +208,7 @@ Definition o_callee_store (S : Type) (x : S) :
 
 (** The actual contract can therefore be defined as follows: *)
 
-Definition store_specs (S : Type) : contract (STORE S) S := make_contract'
+Definition store_specs (S : choiceType) : contract (STORE S) S := make_det_contract
   (store_update S) no_requirement (o_callee_store S).
 
 (** Now, as we briefly mentionned, this contract allows for reasoning about an
@@ -241,8 +228,8 @@ Definition store_specs (S : Type) : contract (STORE S) S := make_contract'
 
 
 Section contract_helpers.
-Context {Fx F : effect} `{F -< Fx} {S X Y : Type}
-    (c : contract F S) (s : S) (s' : dist S) (cmd : F X) (cmd' : F Y)
+Context {Fx F : effect} `{F -< Fx} {S: choiceType} {X Y : Type}
+    (c : contract F S) (s : S) (s' : R.-dist S) (cmd : F X) (cmd' : F Y)
     (x : X) (concl : Prop).
 
 Local Abbreviation inj := (inj (Fx:=Fx)).
@@ -266,7 +253,7 @@ End contract_helpers.
 Section contract_distinguish_helpers.
 Context {Fx F G : effect} `{F -<? Fx} `{G -< Fx}
     `{Distinguish Fx G F}
-    {S X : Type} (c : contract F S) (s : S) (s' : dist S) (cmd : G X) (x : X).
+    {S: choiceType } {X : Type} (c : contract F S) (s : S) (s' : R.-dist S) (cmd : G X) (x : X).
 
 Local Abbreviation inj := (inj (Fx:=Fx)).
 
@@ -278,7 +265,7 @@ Qed.
 
 Lemma distinguished_callee :
   (s' = gen_state_update c s (inj cmd) x /\ gen_promise c s (inj cmd) x)
-  <-> s' = pure1 s.
+  <-> s' = fsdist1 s.
 Proof.
 rewrite /gen_state_update /gen_promise injK_None.
 by split=> [[-> _] | ->].
@@ -294,6 +281,5 @@ Arguments requirement [R F T] (c _) [U] (_).
 Arguments promise [R F T] (c _) [U] (_ _).
 Arguments contractprod [R Fx F E H H0 _ _] (_ _).
 Arguments sharedcontractprod [R Fx F E H _] (_ _).
-Arguments dist [R] (_).
 Infix "-*-" := contractprod (at level 20) : contract_scope .
 Infix "-^-" := sharedcontractprod (at level 20, right associativity) : contract_scope.

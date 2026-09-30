@@ -1,14 +1,13 @@
 From monae Require Import preamble hierarchy.
-From mathcomp Require Import boot reals Rstruct.
+From mathcomp Require Import boot boolp reals Rstruct.
 From FreerDPS Require Import all_freerdps ping_common.
+From HB Require Import structures.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Definition default_R : realType :=
-  [the realType of (Rdefinitions.R : Type)].
-Local Abbreviation R := default_R.
+Local Abbreviation R := Rdefinitions.R.
 
 Local Open Scope monae_scope.
 Local Open Scope contract_scope.
@@ -107,10 +106,17 @@ Module NetworkChannelMod.
 
 Definition packet := option msg.
 
+HB.instance Definition _ := gen_eqMixin packet.
+HB.instance Definition _ := gen_choiceMixin packet.
+
 Record net_state := mk_chan {
   serverQ : packet;
   clientQ : packet;
 }.
+
+HB.instance Definition _ := gen_eqMixin net_state.
+HB.instance Definition _ := gen_choiceMixin net_state.
+
 Implicit Type p : packet.
 Implicit Type ns : net_state.
 Implicit Type m : msg.
@@ -195,17 +201,17 @@ Definition client_promise ns :
     end.
 
 Definition client_c : contract R client_api net_state :=
-  make_contract' R c_step client_req client_promise.
+  make_det_contract R c_step client_req client_promise.
 
 
 Section client_respectful_and_run_lemmas.
 Context {Fx : effect} `{client_api -< Fx} {M : freerMonad Fx}.
 
 Fact send_respect ns :
-  pre (client_c |> (send : M _)) ns.
+  pre (client_c |~ (send : M _)) ns.
 Proof. by rewrite to_hoare_triggerE /= provided_callerP. Qed.
 
-Fact send_run (ins fns : net_state) (u:unit) (run : post (client_c |> (send : M _)) ins u fns ) :
+Fact send_run (ins fns : net_state) (u:unit) (run : post (client_c |~ (send : M _)) ins u fns ) :
   fns.(clientQ) = ins.(clientQ)
   /\ fns.(serverQ) = serverQ (fill_serverQ Ping ins).
 Proof.
@@ -213,11 +219,11 @@ move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
 by case=> /fsdist.fsdist1_inj ->.
 Qed.
 
-Fact wait_respect n (coh : clientQ n != Some Ping) : pre (client_c |> (wait : M _)) n.
+Fact wait_respect n (coh : clientQ n != Some Ping) : pre (client_c |~ (wait : M _)) n.
 Proof.
 Proof. by rewrite to_hoare_triggerE /= provided_callerP /=. Qed.
 
-Fact wait_run (ins fns : net_state) p (run : post (client_c |> (wait : M _)) ins p fns ) :
+Fact wait_run (ins fns : net_state) p (run : post (client_c |~ (wait : M _)) ins p fns ) :
   fns.(clientQ) = None /\ fns.(serverQ) = ins.(serverQ).
 Proof.
 move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
@@ -227,7 +233,7 @@ Qed.
 
 Lemma c_respect ns
     (coh : clientQ ns != Some Ping) :
-  pre (client_c |> (C : M _)) ns.
+  pre (client_c |~ (C : M _)) ns.
 Proof.
 rewrite freer_to_hoare_bindE; split.
 - exact: send_respect.
@@ -237,12 +243,16 @@ Qed.
 
 Lemma c_run
     (ins fns : net_state) (p : option msg)
-    (run : post (client_c |> (C : M _)) ins p fns) :
+    (run : post (client_c |~ (C : M _)) ins p fns) :
   fns.(clientQ) = None /\ fns.(serverQ) = serverQ (fill_serverQ Ping ins).
 Proof.
 move: run.
 rewrite freer_to_hoare_bindE.
-case=> [[]] [[sQ cQ]] [] /send_run [] /= -> ->.
+case=> [[]] [[sQ cQ]] [].
+move/send_run.
+case=>/= Hc Hs.
+rewrite Hc.
+rewrite Hs.
 by move/wait_run.
 Qed.
 
@@ -275,17 +285,17 @@ match cmd with
 end.
 
 Definition server_c : contract R server_api net_state :=
-  make_contract' R server_step server_req server_promise.
+  make_det_contract R server_step server_req server_promise.
 
 Section server_respectful_and_run_lemmas.
 Context {Fx : effect} `{server_api -< Fx} {M : freerMonad Fx}.
 
 Fact reply_respect ns :
-  pre (server_c |> (reply : M _)) ns.
+  pre (server_c |~ (reply : M _)) ns.
 Proof. by rewrite to_hoare_triggerE /= provided_callerP. Qed.
 
 Fact reply_run (ins fns : net_state) (u : unit)
-    (run : post (server_c |> (reply : M _)) ins u fns) :
+    (run : post (server_c |~ (reply : M _)) ins u fns) :
   fns.(clientQ) = clientQ (fill_clientQ Pong ins) /\
   fns.(serverQ) = ins.(serverQ).
 Proof.
@@ -295,11 +305,11 @@ Qed.
 
 Fact recv_respect n (coh : serverQ n != Some Pong) :
  (* = Some Ping \/ serverQ n = None) : *)
-  pre (server_c |> (recv : M _)) n.
+  pre (server_c |~ (recv : M _)) n.
 Proof. by rewrite to_hoare_triggerE /= provided_callerP /=. Qed.
 
 Fact recv_run (ins fns : net_state) (p : option msg)
-    (run : post (server_c |> (recv : M _)) ins p fns) :
+    (run : post (server_c |~ (recv : M _)) ins p fns) :
   fns.(clientQ) = ins.(clientQ) /\ fns.(serverQ) = None.
 Proof.
 move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
@@ -309,7 +319,7 @@ Qed.
 
 Lemma s_p_respect ns (coh : serverQ ns != Some Pong) :
  (* !- Ping \/ serverQ ns = None) : *)
-  pre (server_c |> (S_p : M _)) ns.
+  pre (server_c |~ (S_p : M _)) ns.
 (* Proof. *)
 rewrite /S_p freer_to_hoare_bindE; split.
   exact/recv_respect/coh.
@@ -322,7 +332,7 @@ Qed.
 
 Lemma s_p_run
     (ins fns : net_state) (result : option msg)
-    (run : post (server_c |> (S_p : M _)) ins result fns) :
+    (run : post (server_c |~ (S_p : M _)) ins result fns) :
   match result with
   | Some Ping => fns.(clientQ) = clientQ (fill_clientQ Pong ins)
   | _ => fns.(clientQ) = clientQ ins
@@ -368,7 +378,7 @@ Definition ping_contract : contract R ProtoF net_state := client_c -^- server_c.
 Definition ping_inv (net : net_state) := serverQ net = None /\ clientQ net = None.
 
 Lemma pre_ping (net : net_state) :
-  ping_inv net -> pre (ping_contract |> ping_protocol one_round) net.
+  ping_inv net -> pre (ping_contract |~ ping_protocol one_round) net.
 Proof.
 move=>[s0 c0]; rewrite /= bindA.
 rewrite freer_to_hoare_bindE freer_contract_left //=; split.
@@ -385,7 +395,7 @@ all: by rewrite pre_ret.
 Qed.
 
 Lemma post_ping (n n' : net_state) (result : outcome) :
-  ping_inv n -> post (ping_contract |> ping_protocol one_round) n result n' ->
+  ping_inv n -> post (ping_contract |~ ping_protocol one_round) n result n' ->
    ping_inv n'.
 Proof.
 move=> [s0 c0]; rewrite /= bindA.

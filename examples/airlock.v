@@ -11,9 +11,7 @@ From FreerDPS Require Import all_freerdps.
 
 From mathcomp Require Import ssreflect ssrfun reals Rstruct.
 
-Definition default_R : realType :=
-  [the realType of (Rdefinitions.R : Type)].
-Local Abbreviation R := default_R.
+Local Abbreviation R := Rdefinitions.R.
 (* DOORS == TODO *)
 
 
@@ -147,7 +145,7 @@ it is false only when the state of a door that we check is not u
 *)
 
 Definition doors_c : contract R DOORS state :=
-  make_contract' R
+  make_det_contract R
    (fun s U cmd _ => doors_witness_update s U cmd)
    doors_requirement
    doors_promise.
@@ -171,19 +169,19 @@ Context {Fx : effect} `{DOORS -< Fx} {M : freerMonad Fx}.
 
 (** Closing a door [d] in any system [s] is always a respectful operation. *)
 Lemma close_door_respectful d :
-  pre (doors_c |> (close_door d : M _)) = [set: _].
+  pre (doors_c |~ (close_door d : M _)) = [set: _].
 Proof.
 rewrite /close_door -subTset=> s _.
 rewrite freer_to_hoare_bindE/=; split.
   by rewrite to_hoare_triggerE /= provided_callerP.
 case=> w'; rewrite pre_to_hoare_whenP // !to_hoare_triggerE /=.
-rewrite provided_calleeP provided_callerP /= /pure1.
+rewrite provided_calleeP provided_callerP /=.
 by case=>/fsdist.fsdist1_inj -> ->.
 Qed.
 
 Lemma open_door_respectful (s : state) d
     (safe : ~~ door_state (opposite_door d) s) :
-  pre (doors_c |> (open_door d : M _)) s.
+  pre (doors_c |~ (open_door d : M _)) s.
 Proof.
 rewrite /open_door freer_to_hoare_bindE; split.
   by rewrite pre_to_hoare_triggerP.
@@ -194,7 +192,7 @@ by move: safe=> /= /negPf ->.
 Qed.
 
 Lemma close_door_run (s : state) d (s' : state) (x : unit)
-    (run : post (doors_c |> (close_door d : M _)) s x s') :
+    (run : post (doors_c |~ (close_door d : M _)) s x s') :
   ~~ door_state d s'.
 Proof.
 move: run; rewrite /close_door freer_to_hoare_bindE.
@@ -212,8 +210,8 @@ Opaque door_state.
 
 Lemma doors_trigger_preserves_safe
     {a : Type} (cmd : Fx a) (s : state) (x : a) (s' : state) :
-  pre (doors_c |> (ptrigger cmd : M _)) s ->
-  post (doors_c |> (ptrigger cmd : M _)) s x s' ->
+  pre (doors_c |~ (ptrigger cmd : M _)) s ->
+  post (doors_c |~ (ptrigger cmd : M _)) s x s' ->
   not_both_open s -> not_both_open s'.
 Proof.
 rewrite to_hoare_triggerE /=.
@@ -248,7 +246,7 @@ Context {Fx : effect} `{DOORS -< Fx} {M : inductiveFreerMonad Fx}.
   * if the invariant was preserved all along.
   *)
 Lemma doors_run_preserves_safe {A : Type} (p : M A) :
-  preserves_invariant not_both_open (doors_c |> p).
+  preserves_invariant not_both_open (doors_c |~ p).
 Proof.
 by apply: to_hoare_preserves_invariant=> *;
   exact: (doors_handler_preserves_safe (M := M)).
@@ -257,8 +255,8 @@ Qed.
 Lemma respectful_run_inv {A : Type} (p : M A)
     (s : state) (safe : not_both_open s)
     (a : A) (s' : state)
-    (hpre : pre (doors_c |> p) s)
-    (hpost : post (doors_c |> p) s a s') :
+    (hpre : pre (doors_c |~ p) s)
+    (hpost : post (doors_c |~ p) s a s') :
   not_both_open s'.
 Proof. by move: hpre hpost safe; exact: doors_run_preserves_safe. Qed.
 End InvariantRunLemmas.
@@ -269,7 +267,7 @@ Context {Fx : effect} `{DOORS ;; (STORE nat) -<< Fx}
   {M : inductiveFreerMonad Fx}.
 
 Lemma controller_pre {A : Type} (cmd : CONTROLLER A) (s : state) :
-  pre (doors_c |> controller (M := M) A cmd) s.
+  pre (doors_c |~ controller (M := M) A cmd) s.
 Proof.
 case: cmd => [| d].
 - rewrite freer_to_hoare_bindE; split =>[|cpt w].
