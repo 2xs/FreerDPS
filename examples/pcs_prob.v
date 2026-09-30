@@ -84,48 +84,49 @@ match ns with
 | mk_chan sQ _ => (fsdist1 ns) <| p |> (fsdist1 (mk_chan sQ None))
 end.
 
-Definition keep_or_drop p ns (q: bool) :=
-if q then server_keep_or_drop p ns
+Definition keep_or_drop p ns (is_server: bool) :=
+if is_server then server_keep_or_drop p ns
 else client_keep_or_drop p ns.
 
-Definition flip_step (server_bound : bool) (ns : net_state) :
+Definition flip_step (is_server : bool) (ns : net_state) :
   forall X, @FlipEff R X -> X -> R.-dist net_state
   (* todo: make this dist :      ^^^^^^^^^ *)
 := fun T op _ => match op with
-| flipe p => keep_or_drop p ns server_bound
+| flipe p => keep_or_drop p ns is_server
 end.
   (* avec prob p :
   dist p {
   - keep => Ret ns
-  - drop => drop_new_packet ns server_bound
+  - drop => drop_new_packet ns is_server
   } *)
 
-Definition selected_queue (server_bound : bool) ns : packet :=
-  if server_bound then serverQ ns else clientQ ns.
+Definition select_queue (is_server : bool) ns : packet :=
+  if is_server then serverQ ns else clientQ ns.
 
-Definition expected_packet (server_bound : bool) : packet :=
-  if server_bound then Some Ping else Some Pong.
+Definition expected_packet (is_server : bool) : packet :=
+  if is_server then Some Ping else Some Pong.
 
-Definition flip_requirement (server_bound : bool) ns :
+Definition flip_requirement (is_server : bool) ns :
     forall X, @FlipEff R X -> Prop :=
-  fun _ _ => selected_queue server_bound ns = expected_packet server_bound.
+  fun _ _ => select_queue is_server ns = expected_packet is_server.
 
 (* On promise check, we have two things : *)
 (* - The queue that received a change must be either same size or -1 *)
 (* - The other queue must be the same as before *)
-Inductive flip_promise (server_bound : bool) (ns : net_state) :
+Inductive flip_promise (is_server : bool) (ns : net_state) :
     forall X, @FlipEff R X -> X -> Prop :=
-  | KEEP_IT : (selected_queue server_bound ns = expected_packet server_bound)-> flip_promise server_bound ns (flipe 1%:i01) true
+  | KEEP_IT : select_queue is_server ns = expected_packet is_server
+    -> flip_promise is_server ns (flipe 1%:i01) true
   | DROP_IT :
-    (selected_queue server_bound ns = None) ->
-     (forall fns, selected_queue (~~server_bound) fns = selected_queue (~~server_bound) ns)
-     ->  flip_promise server_bound ns (flipe 0%:i01) false.
-  (* /\ exists o, o = selected_queue (~~server_bound) ns  *)
+    select_queue is_server ns = None
+    -> (forall fns, select_queue (~~is_server) fns = select_queue (~~is_server) ns)
+    -> flip_promise is_server ns (flipe 0%:i01) false.
+  (* /\ exists o, o = select_queue (~~is_server) ns  *)
 
-Definition flip_contract (server_bound : bool) :
+Definition flip_contract (is_server : bool) :
     contract R (@FlipEff R) net_state :=
-  make_contract (flip_step server_bound)
-    (flip_requirement server_bound) (flip_promise server_bound).
+  make_contract (flip_step is_server)
+    (flip_requirement is_server) (flip_promise is_server).
 
 End flip_contract.
 Section syntax.
@@ -165,11 +166,9 @@ Context `{@FlipEff R ;; server_api -<< Fx} {M : freerMonad Fx}.
 Variable (psucc : {prob R}).
 
 Definition preply : M bool := reply >> flip psucc.
-Definition pS_p : M (option msg) :=
+Definition pserver : M (option msg) :=
   recv >>= fun inc=> if inc is Some Ping then preply >> Ret inc else Ret inc.
-Abbreviation loop := PingPongM.loop.
-Definition S_ (fuel : nat) : M unit := loop fuel pS_p.
-Arguments pS_p : simpl never.
+Arguments pserver : simpl never.
 End server_program.
 End ProbPingPongM.
 
@@ -182,21 +181,21 @@ Context {Fx : effect} `{@FlipEff R -< Fx}.
 Context {M : freerMonad Fx}.
 Implicit Types (psucc : {prob R}).
 
-Fact flip_respect server_bound psucc (net : net_state)
-    (queued : selected_queue server_bound net = expected_packet server_bound):
-  pre (flip_contract server_bound |~ (flip psucc : M _)) net.
+Fact flip_respect is_server psucc (net : net_state)
+    (queued : select_queue is_server net = expected_packet is_server):
+  pre (flip_contract is_server |~ (flip psucc : M _)) net.
 Proof.
 by rewrite to_hoare_triggerE /= provided_callerP /= /flip_requirement.
 Qed.
 
 (* TODO: This lemma needs to be updated to fit the new style *)
-Fact flip_run server_bound psucc (ins fns : net_state) keep
-    (run : post (flip_contract server_bound |~ (flip psucc : M _))
+Fact flip_run is_server psucc (ins fns : net_state) keep
+    (run : post (flip_contract is_server |~ (flip psucc : M _))
       ins keep fns) :
-  fsdist1 fns = keep_or_drop psucc ins server_bound /\
-  flip_promise server_bound ins (flipe psucc) keep.
-  (* fsdist1 fns = keep_or_drop psucc ins server_bound. *)
-  (* keep_or_drop psucc fns server_bound = keep_or_drop psucc ins server_bound. *)
+  fsdist1 fns = keep_or_drop psucc ins is_server /\
+  flip_promise is_server ins (flipe psucc) keep.
+  (* fsdist1 fns = keep_or_drop psucc ins is_server. *)
+  (* keep_or_drop psucc fns is_server = keep_or_drop psucc ins is_server. *)
 Proof.
 by move/post_to_hoare_triggerP: run.
 (* move: run. *)
@@ -208,15 +207,15 @@ inversion Hpromise as [Hcorrect Hbb Hp Hex | Hincorrect Hcoh Hbb Hp Hex ];
   clear Hpromise.
 - move: fns Hupdate=> -[sf cf] Hupdate.
   move: ins Hupdate Hcorrect=> -[si ci].
-  by rewrite /selected_queue /= /server_keep_or_drop=> <-.
+  by rewrite /select_queue /= /server_keep_or_drop=> <-.
   (* rewrite /keep_or_drop /server_keep_or_drop /client_keep_or_drop. *)
-  (* by rewrite !conv1; case: server_bound. *)
+  (* by rewrite !conv1; case: is_server. *)
 - move: Hupdate Hcoh=> _ /(_ fns).
   move: fns=> -[sf cf].
   move: ins Hincorrect=> -[si ci].
-  rewrite /selected_queue /= /server_keep_or_drop.
+  rewrite /select_queue /= /server_keep_or_drop.
   rewrite /keep_or_drop /server_keep_or_drop /client_keep_or_drop.
-  by rewrite !conv0; case: server_bound=>/= <- ->. *)
+  by rewrite !conv0; case: is_server=>/= <- ->. *)
 Qed.
 End flip_respectful_and_run_lemmas.
 
@@ -327,7 +326,7 @@ Qed.
 Lemma s_p_respect psucc (net : net_state)
     (coh : serverQ net != Some Pong) :
     (* = Some Ping \/ serverQ net = None) : *)
-  pre (flip_contract false -^- server_c |~ (pS_p psucc : M _)) net.
+  pre (flip_contract false -^- server_c |~ (pserver psucc : M _)) net.
 Proof.
 rewrite freer_to_hoare_bindE freer_contract_right //.
 split; first exact/recv_respect/coh.
@@ -339,7 +338,7 @@ all: by rewrite pre_ret.
 Qed.
 
 Lemma s_p_run psucc (ins fns : net_state) (result : option msg)
-    (run : post (flip_contract false -^- server_c |~ (pS_p psucc : M _))
+    (run : post (flip_contract false -^- server_c |~ (pserver psucc : M _))
       ins result fns) :
   fsdist1 fns =
     if result is Some Ping then
@@ -358,7 +357,7 @@ End pscm.
 
 Import pccm pscm.
 
-Section protocol_contract.
+Section prob_ping_contract.
 Context {ClientF ServerF ProtoF : effect}.
 Context `{@FlipEff R ;; client_api -<< ClientF}.
 Context `{@FlipEff R ;; server_api -<< ServerF}.
@@ -367,7 +366,7 @@ Context `{ClientF ;; ServerF -<< ProtoF}.
 Definition sharedP : contract R ProtoF net_state :=
   (flip_contract true -^- client_c) -^-
   (flip_contract false -^- server_c).
-End protocol_contract.
+End prob_ping_contract.
 
 Module Import ProbProtocolSyntax.
 Section syntax.
@@ -384,14 +383,14 @@ by exists (frBind (frTrigger (inj (SEND Ping)))
 Qed.
 
 Lemma syn_s_p (psucc : {prob R}) :
-  providesOnlyF (F:= ServerF) (M := M) (pS_p psucc).
+  providesOnlyF (F:= ServerF) (M := M) (pserver psucc).
 Proof.
 exists (frBind (frTrigger (inj RECV)) (fun inc=>
   if inc is Some Ping then
     frBind (frBind (frTrigger (inj (RPLY Pong)))
       (fun=> frTrigger (inj (flipe psucc)))) (fun=> frRet inc)
   else frRet inc)).
-rewrite /= /pS_p /preply.
+rewrite /= /pserver /preply.
 congr (recv >>= _).
 by apply: boolp.funext=> -[[]|].
 Qed.
@@ -400,7 +399,7 @@ End syntax.
 
 #[export] Hint Extern 0 (providesOnlyF (psend _)) =>
   solve [exact: syn_psend] : core.
-#[export] Hint Extern 0 (providesOnlyF (pS_p _)) =>
+#[export] Hint Extern 0 (providesOnlyF (pserver _)) =>
   solve [exact: syn_s_p] : core.
 End ProbProtocolSyntax.
 
@@ -415,31 +414,30 @@ Context `{ClientF ;; ServerF -<< ProtoF} {M : freerMonad ProtoF}.
 
 Variable (psucc : {prob R}).
 
-Inductive proto_api : effect := one_round : proto_api outcome.
+(* TODO put in common *)
+Inductive ping_round : effect := one_round : ping_round outcome.
 
-Definition protocol : component (M := M) proto_api ProtoF :=
+Definition prob_ping_protocol : component (M := M) ping_round ProtoF :=
   fun _ cmd=>
     match cmd with
     | one_round =>
-        psend psucc >> (pS_p psucc >>= fun inc=>
-          match inc with
-          | Some Ping => wait >>= fun inc=>
-              match inc with
-              | Some Pong => Ret GotPong
-              | _ => Ret LostPong
-              end
+        psend psucc >> (pserver psucc >>= fun om=>
+          match om with
+          | Some Ping => wait >>= fun om=>
+            if om is Some Pong then Ret GotPong else Ret LostPong
           | _ => Ret LostPing
           end)
     end.
 
-Definition protocol_contract : contract R ProtoF net_state :=
+Definition prob_ping_contract : contract R ProtoF net_state :=
   sharedP (ClientF := ClientF) (ServerF := ServerF).
 
+(* TODO put in common *)
 Definition protocol_inv (net : net_state) := (serverQ net = None) /\ (clientQ net = None).
 
-Lemma protocol_respect (net : net_state) :
+Lemma pre_prob_ping (net : net_state) :
   protocol_inv net ->
-  pre (protocol_contract |~ protocol one_round) net.
+  pre (prob_ping_contract |~ prob_ping_protocol one_round) net.
 Proof.
 move=> [s0 c0].
 rewrite freer_to_hoare_bindE freer_contract_left // freer_contract_prodT.
@@ -474,29 +472,32 @@ case: opm=> [[]|] /=.
 all: by rewrite pre_ret.
 Qed.
 
-Lemma isolate_sq nQ n1 n2 :
+Lemma fdist1_serverQ nQ n1 n2 :
 fsdist1 nQ = fsdist1 n1 <|psucc|> fsdist1 n2 ->
 fsdist1 (serverQ nQ) = fsdist1 (serverQ n1) <|psucc|> fsdist1 (serverQ n2).
 Proof.
 move/(congr1 (fsdistmap serverQ)).
 by rewrite fsdistmap_affine !fsdistmap1.
 Qed.
-Lemma isolate_cq nQ n1 n2 :
+
+Lemma fdist1_clientQ nQ n1 n2 :
 fsdist1 nQ = fsdist1 n1 <|psucc|> fsdist1 n2 ->
 fsdist1 (clientQ nQ) = fsdist1 (clientQ n1) <|psucc|> fsdist1 (clientQ n2).
 Proof.
 move/(congr1 (fsdistmap clientQ)).
 by rewrite fsdistmap_affine !fsdistmap1.
 Qed.
-Lemma protocol_run_inv (ins fns : net_state) (result : outcome) :
+
+Lemma post_prob_ping (ins fns : net_state) (result : outcome) :
   protocol_inv ins ->
-  post (protocol_contract |~ protocol one_round) ins result fns ->
+  post (prob_ping_contract |~ prob_ping_protocol one_round) ins result fns ->
   protocol_inv fns.
 Proof.
 move=> [s0 c0].
 rewrite freer_to_hoare_bindE freer_contract_left // freer_contract_prodT.
 case=> [[]] [[s1 c1]] [] /psend_run.
-move/isolate_cq=>/=; rewrite convmm c0 =>/fsdist1_inj=>->.
+rewrite /server_keep_or_drop.
+move/fdist1_clientQ=>/=; rewrite convmm c0 =>/fsdist1_inj=>->.
 rewrite freer_to_hoare_bindE freer_contract_right // freer_contract_prodT.
 case=> [opm] [[s2 c2]] [] /s_p_run /=.
 case: opm=> [[]|]=> Hc2/=.
@@ -509,17 +510,17 @@ all: case.
 all: move=>/= ?.
 all: move=><-.
 all: move: Hc2.
-all: try (move/isolate_sq=>/=; rewrite convmm); move/fsdist1_inj=>//.
+all: try (move/fdist1_serverQ=>/=; rewrite convmm); move/fsdist1_inj=>//.
 all: by move=>->.
 Qed.
 
 Theorem prob_ping_protocol_correct :
-  correct_component protocol (no_contract R proto_api) protocol_contract
+  correct_component prob_ping_protocol (no_contract R ping_round) prob_ping_contract
     (fun=> protocol_inv).
 Proof.
 move=> [] net inv ? [] []; split=> [|result net' run] /=.
-  exact: protocol_respect.
-by split=> //; exact: protocol_run_inv inv run.
+  exact: pre_prob_ping.
+by split=> //; exact: post_prob_ping inv run.
 Qed.
 End protocol.
 End ProbProtocolM.
