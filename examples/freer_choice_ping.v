@@ -48,7 +48,7 @@ Qed.
 
 Lemma ping_pongs1 fuel : ping_pongs (transmit:=transmit) 1%:i01 fuel ≈ Ret GotPong.
 Proof.
-by elim : fuel => [|n IH];
+by case : fuel => [|n];
     rewrite ping_pongsE ping_pong1 ?bindretf.
 Qed.
 
@@ -68,6 +68,7 @@ rewrite ping_pongsSE ping_pong_distribution exchangesSE.
 by rewrite !freer_choice_bindDl !bindretf IH.
 Qed.
 
+(* TODO move to free_choice.v *)
 Lemma freer_choice0 (A : UU0) (a b : M A) :
   a <|| 0%:i01 : {prob R} ||> b ≈ b.
 Proof.

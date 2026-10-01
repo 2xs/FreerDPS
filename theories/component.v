@@ -6,6 +6,8 @@
 
 From FreerDPS Require Import init effect freer contract hoare.
 From monae Require Import hierarchy.
+From mathcomp Require Import reals choice.
+From infotheo Require Import fsdist realType_ext.
 
 (** * Definition *)
 
@@ -25,18 +27,18 @@ From monae Require Import hierarchy.
     Thus, a component [c : component F E] is a polymorphic function which
     maps primitives of [F] to impure computations using [E]. *)
 
-Definition component (F E : effect) `{M : freerMonad E} : Type :=
-  F ~~> M.
+Definition component (Fin Fout : effect) `{M : freerMonad Fout} : Type :=
+  Fin ~~> M.
 
-Definition correct_component {Ex E F : effect} `{E -<? Ex} {M : freerMonad Ex}
-  {SF SE : Type}
-    (c : component F Ex) (cF : contract F SF)
-    (cE : contract E SE) (pred : SF -> SE -> Prop) :
+Definition correct_component {R : realType} {Fx Fin Fout : effect} `{Fout -<? Fx} {M : freerMonad Fx}
+  {Sin Sout : choiceType}
+    (compo : component Fin Fx) (cin : contract R Fin Sin)
+    (cout : contract R Fout Sout) (rel_inv : R.-dist Sin -> Sout -> Prop) :
   Prop :=
-  forall (sF : SF) (sE : SE) (init : pred sF sE) (T : Type)
-      (cmd : F T) (o_caller : requirement cF sF cmd),
-    pre (cE |> c T cmd) sE /\
-    forall (t : T) (sE' : SE),
-      post (cE |> (c T cmd : M _)) sE t sE' ->
-      promise cF sF cmd t /\
-      pred (state_update cF sF cmd t) sE'.
+  forall (sin : Sin) (sout : Sout) (init : rel_inv (fsdist1 sin) sout) (T : Type)
+      (cmd : Fin T) (req : requirement cin sin cmd),
+    pre (cout |~ compo T cmd) sout /\
+    forall (t : T) (sout' : Sout),
+      post (cout |~ (compo T cmd : M _)) sout t sout' ->
+      promise cin sin cmd t /\
+      rel_inv (state_update cin sin cmd t) sout'.
