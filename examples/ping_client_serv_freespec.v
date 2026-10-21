@@ -377,6 +377,8 @@ Definition ping_protocol : component (M:=M) ping_round ProtoF :=
 Definition ping_contract : contract R ProtoF net_state := client_c -^- server_c.
 Definition ping_inv (net : net_state) := serverQ net = None /\ clientQ net = None.
 
+Set Printing Implicit.
+
 Lemma pre_ping (net : net_state) :
   ping_inv net -> pre (ping_contract |~ ping_protocol one_round) net.
 Proof.

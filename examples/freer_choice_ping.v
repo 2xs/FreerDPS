@@ -42,7 +42,7 @@ Proof. exact: freer_choice1. Qed.
 
 Lemma ping_pong1 : ping_pong (transmit:=transmit) 1%:i01 ≈ Ret GotPong.
 Proof.
-rewrite /ping_pong /client_send /server_reply /client_receive.
+rewrite ping_pongE.
 by rewrite transmit1 bindretf transmit1 bindretf.
 Qed.
 
@@ -55,7 +55,7 @@ Qed.
 Lemma ping_pong_distribution psucc :
   ping_pong (transmit:=transmit) psucc ≈ exchange_once (choose:=freer_choice) psucc.
 Proof.
-rewrite /ping_pongs /ping_pong.
+rewrite ping_pongE.
 by repeat rewrite freer_choice_bindDl !bindretf.
 Qed.
 
@@ -79,10 +79,10 @@ Qed.
 
 Lemma ping_pong_success_probability psucc :
   ping_pong_success (transmit:=transmit) (psucc%:num.~%:i01) ≈
-    flip (p_ex_once (psucc%:num.~%:i01)).
+    flip (p_exchange_once (psucc%:num.~%:i01)).
 Proof.
   rewrite ping_pong_successE success_ofE ping_pong_distribution.
-  rewrite /exchange_once /exchange p_ex_onceE.
+  rewrite /exchange_once /exchange p_exchange_onceE.
   rewrite !freer_choice_bindDl !bindretf !success_eventE -freer_flip_choice.
 
   set d := psucc%:num.~%:i01.
@@ -91,11 +91,12 @@ Proof.
   have [->/=|d1] := eqVneq d 1%:i01.
   - by rewrite p_of_1s !freer_choice1.
   have p1 : [p_of d, d] != 1%:i01.
-    by rewrite p_of_rs1 (negbTE d1) andbF.
+  by rewrite p_of_rs1 (negbTE d1) andbF.
   (* Give RHS the same form as LHS *)
   rewrite -[X in _ ≈ _ <|| _ ||> X]
     (freer_choicemm _ [q_of d, d] (Ret false)).
   by rewrite freer_choiceA (s_of_pqK p1) (r_of_pqK p1 d0).
+
 Qed.
 
 Lemma ping_pongs_success_stepE psucc fuel :
@@ -103,29 +104,29 @@ Lemma ping_pongs_success_stepE psucc fuel :
     (Ret true <|| psucc ||> ping_pongs_success (transmit:=transmit) psucc fuel) <|| psucc ||>
     ping_pongs_success (transmit:=transmit) psucc fuel.
 Proof.
-  rewrite ping_pongs_successE success_ofE ping_pongsE /ping_pong.
+  rewrite ping_pongs_successE success_ofE ping_pongsE ping_pongE.
   rewrite !freer_choice_bindDl !bindretf 2!bindA !freer_choice_bindDl !bindretf.
   by rewrite success_eventE.
 Qed.
 
 Theorem ping_pong_retry_success_probability psucc (fuel : nat) :
   ping_pongs_success (transmit:=transmit) (psucc%:num.~%:i01) fuel ≈
-    flip (p_exs (psucc%:num.~%:i01) fuel).
+    flip (p_exchanges (psucc%:num.~%:i01) fuel).
 Proof.
 elim: fuel => [|n].
   exact: ping_pong_success_probability.
-rewrite ping_pongs_success_stepE !p_exsE p_exE p_ex_onceE=> ->.
+rewrite ping_pongs_success_stepE !p_exchangesE p_exchangeE p_exchange_onceE=> ->.
 set d := psucc%:num.~%:i01.
 have [->/=|d0] := eqVneq d 0%:i01.
   by rewrite -!freer_flip_choice p_of_0s s_of_0q freer_choice0.
 have [->/=|d1] := eqVneq d 1%:i01.
   by rewrite -!freer_flip_choice p_of_1s s_of_1q !freer_choice1.
-rewrite -p_exsE.
-rewrite -(flip_or_true [p_of d, d] (p_exs d n)).
+rewrite -p_exchangesE.
+rewrite -(flip_or_true [p_of d, d] (p_exchanges d n)).
 have p1 : [p_of d, d] != 1%:i01.
   by rewrite p_of_rs1 (negbTE d1) andbF.
 rewrite -[X in _ ≈ _ <|| _ ||> X]
-  (freer_choicemm _ [q_of d, d] (flip (p_exs d n))).
+  (freer_choicemm _ [q_of d, d] (flip (p_exchanges d n))).
 by rewrite freer_choiceA (s_of_pqK p1) (r_of_pqK p1 d0).
 Qed.
 End lossy_round_trip.
