@@ -1,3 +1,6 @@
+(* From the AU-Cobra repo, all links are in the README. Only updates made by  *)
+(* @awshanhussain or @forrazh are to keep code up-to-date.    License: MIT(c) *)
+(*                   2018 - 2020 -- Aarhus University                         *)
 From mathcomp Require Import all_ssreflect.
 
 Set Implicit Arguments.
@@ -43,5 +46,3 @@ Qed.
 Goal forall (T : eqType) (a a' b b' : seq T), a =i a' -> b =i b' -> a ++ b =i a'
   ++ b'.
 Proof. by move=> >; rewrite -3!/(mem_eq _ _) => -> ->. Qed.
-
-
