@@ -23,6 +23,8 @@ depends: [
   "rocq-mathcomp-ssreflect" {>= "2.6.0"}
   "rocq-mathcomp-analysis" {>= "1.18.0"}
   "rocq-monae" {= "0.9.3" | = "dev"}
+  "rocq-mathcomp-analysis-stdlib" {>= "1.18.0"}
+  "coq-record-update" {= "0.3.6"}
 ]
 
 tags: [
