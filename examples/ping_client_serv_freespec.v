@@ -449,4 +449,3 @@ For at most [n] attempts, with [q = (1 - p)^2]:
 P(n) = 1 - (1 - q)^n.
 >>
 *)
-
