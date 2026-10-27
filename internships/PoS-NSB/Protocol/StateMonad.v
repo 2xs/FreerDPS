@@ -1,3 +1,6 @@
+(* From the AU-Cobra repo, all links are in the README. Only updates made by  *)
+(* @awshanhussain or @forrazh are to keep code up-to-date.    License: MIT(c) *)
+(*                   2018 - 2020 -- Aarhus University                         *)
 From mathcomp Require Import all_ssreflect.
 
 Set Implicit Arguments.
@@ -33,11 +36,3 @@ Notation "X <- A ; B" := (A >>= (fun X => B)) (at level 81, right associativity,
 
 Notation "A ;; B" := (A >>= (fun _ => B)) (at level 81, right associativity,
   only parsing).
-
-
-
-
-
-
-
-

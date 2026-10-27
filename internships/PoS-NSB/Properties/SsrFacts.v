@@ -1,3 +1,6 @@
+(* From the AU-Cobra repo, all links are in the README. Only updates made by  *)
+(* @awshanhussain or @forrazh are to keep code up-to-date.    License: MIT(c) *)
+(*                   2018 - 2020 -- Aarhus University                         *)
 From mathcomp Require Import all_ssreflect.
 
 Set Implicit Arguments.
@@ -507,5 +510,3 @@ Lemma instant7 (A B C D E F G H I : Type):
   A -> B -> C -> D -> E -> F -> G -> (H -> I) -> ((A -> B -> C -> D -> E -> F ->
     G -> H ) -> I).
 Proof. by move=> a b c d e f h + /(_ a b c d e f h). Qed.
-
-
