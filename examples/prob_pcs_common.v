@@ -328,8 +328,10 @@ case: output=> [[]|] /=.
     all: by rewrite post_ret=> -[] _ <-.
 Qed.
 
-Theorem ping_correct :
-  correct_component (prob_ping_protocol 1%:i01) (no_contract R ping_round) prob_ping_contract
+Theorem ping_correct1 :
+  correct_component (prob_ping_protocol 1%:i01)
+    (no_contract R ping_round)
+    prob_ping_contract
     (fun=> ping_inv).
 Proof.
 move=>[] n inv ? [] []; split=>[|m n' Hpost] /=.
