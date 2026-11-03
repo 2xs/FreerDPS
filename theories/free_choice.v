@@ -71,33 +71,36 @@ End syntax.
 
 Notation "x <|| p ||> y" := (freer_choice p x y).
 
+(** The laws are quantified over the provision of [FlipEff], so that each
+    use picks the provision from its context. *)
 HB.mixin Record isMonadFreerChoiceEqReas (Fx : effect)
-    (R : realType) `{@FlipEff R -< Fx} (M : UU0 -> UU0)
+    (R : realType) (M : UU0 -> UU0)
     of MonadFreer Fx M & hasWBisim M := {
-  freer_choice1 : forall (A : UU0) (a b : M A),
+  freer_choice1 : forall {H : @FlipEff R -< Fx} (A : UU0) (a b : M A),
     (a <|| 1%:i01 : {prob R} ||> b) ≈ a;
-  freer_choiceC : forall (A : UU0) (p : {prob R}) (a b : M A),
+  freer_choiceC : forall {H : @FlipEff R -< Fx} (A : UU0) (p : {prob R})
+      (a b : M A),
     (a <|| p ||> b) ≈ (b <|| p%:num.~%:i01 ||> a);
-  freer_choicemm : forall (A : UU0) (p : {prob R}) (a : M A),
+  freer_choicemm : forall {H : @FlipEff R -< Fx} (A : UU0) (p : {prob R})
+      (a : M A),
     (a <|| p ||> a) ≈ a;
-  freer_choiceA : forall (A : UU0) (p q : {prob R}) (a b c : M A),
+  freer_choiceA : forall {H : @FlipEff R -< Fx} (A : UU0) (p q : {prob R})
+      (a b c : M A),
     (a <|| p ||> (b <|| q ||> c)) ≈
       ((a <|| [r_of p, q] ||> b) <|| [s_of p, q] ||> c);
-  freer_choice_bindDl : forall (A B : UU0) (p : {prob R}) (a b : M A)
-      (f : A -> M B),
+  freer_choice_bindDl : forall {H : @FlipEff R -< Fx} (A B : UU0)
+      (p : {prob R}) (a b : M A) (f : A -> M B),
     ((a <|| p ||> b) >>= f) ≈
       ((a >>= f) <|| p ||> (b >>= f))
 }.
 
 #[short(type=choiceEqFreerMonad)]
-HB.structure Definition MonadFreerChoiceEqReas Fx (R : realType)
-    `{flipprovided : @FlipEff R -< Fx} :=
-  {M of isMonadFreerChoiceEqReas Fx R flipprovided M &}.
+HB.structure Definition MonadFreerChoiceEqReas Fx (R : realType) :=
+  {M of isMonadFreerChoiceEqReas Fx R M &}.
 
 Section setoid_choiceEqFreerMonad.
-Context {R : realType} {Fx : effect}
-  `{flipprovided : @FlipEff R -< Fx}.
-Variable M : choiceEqFreerMonad Fx R flipprovided.
+Context {R : realType} {Fx : effect}.
+Variable M : choiceEqFreerMonad Fx R.
 
 #[global] Add Parametric Relation A : (M A) (@wBisim M A)
   reflexivity proved by (@wBisim_refl M A)
@@ -116,6 +119,8 @@ apply: wBisim_trans.
 exact: (bindfwB _ _ _ _ b pointwise_related).
 Qed.
 
+Context `{flipprovided : @FlipEff R -< Fx}.
+
 #[global] Add Parametric Morphism A (p : {prob R}) :
     (@freer_choice R Fx flipprovided M p A) with signature
   (@wBisim M A) ==> (@wBisim M A) ==> (@wBisim M A)
@@ -132,8 +137,7 @@ End setoid_choiceEqFreerMonad.
 
 Module ChoiceRelation.
 Section relation.
-Context {R : realType} {Fx : effect}
-  `{flipprovided : @FlipEff R -< Fx}.
+Context {R : realType} {Fx : effect}.
 Local Notation M := (freer Fx).
 
 (** Equivalence and bind congruence close the five choice laws. *)
@@ -147,25 +151,31 @@ Inductive choice_eq : forall [A : UU0], M A -> M A -> Prop :=
 | choice_bindf A B (f g : A -> M B) (a : M A) :
     (forall x, choice_eq (f x) (g x)) ->
     choice_eq (a >>= f) (a >>= g)
-| choice1 A (a b : M A) :
+| choice1 `{@FlipEff R -< Fx} A (a b : M A) :
     choice_eq (a <|| 1%:i01 : {prob R} ||> b) a
-| choiceC A (p : {prob R}) (a b : M A) :
+| choiceC `{@FlipEff R -< Fx} A (p : {prob R}) (a b : M A) :
     choice_eq (a <|| p ||> b) (b <|| p%:num.~%:i01 ||> a)
-| choicemm A (p : {prob R}) (a : M A) :
+| choicemm `{@FlipEff R -< Fx} A (p : {prob R}) (a : M A) :
     choice_eq (a <|| p ||> a) a
-| choiceA A (p q : {prob R}) (a b c : M A) :
+| choiceA `{@FlipEff R -< Fx} A (p q : {prob R}) (a b c : M A) :
     choice_eq (a <|| p ||> (b <|| q ||> c))
       ((a <|| [r_of p, q] ||> b) <|| [s_of p, q] ||> c)
-| choice_bindDl A B (p : {prob R}) (a b : M A) (f : A -> M B) :
+| choice_bindDl `{@FlipEff R -< Fx} A B (p : {prob R}) (a b : M A) (f : A -> M B) :
     choice_eq ((a <|| p ||> b) >>= f)
       ((a >>= f) <|| p ||> (b >>= f)).
+
+Arguments choice1 : clear implicits.
+Arguments choiceC : clear implicits.
+Arguments choicemm : clear implicits.
+Arguments choiceA : clear implicits.
+Arguments choice_bindDl : clear implicits.
 
 #[export] HB.instance Definition _ :=
   @hasWBisim.Build (freer Fx) choice_eq choice_refl choice_sym choice_trans
     choice_bindm choice_bindf.
 
 #[export] HB.instance Definition _ :=
-  isMonadFreerChoiceEqReas.Build Fx R flipprovided (freer Fx)
+  isMonadFreerChoiceEqReas.Build Fx R (freer Fx)
     choice1 choiceC choicemm choiceA choice_bindDl.
 
 End relation.
