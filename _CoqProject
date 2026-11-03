@@ -22,3 +22,4 @@
 ./examples/ping_client_serv_freespec.v
 ./examples/prob_pcs_common.v
 ./examples/test_provide_transitivity.v
+./examples/test_contractprod.v
