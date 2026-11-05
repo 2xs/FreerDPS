@@ -24,3 +24,6 @@
 ./examples/prob_pcs_common.v
 ./examples/test_provide_transitivity.v
 ./examples/test_contractprod.v
+
+./examples/test_semantics.v
+./examples/smram.v
