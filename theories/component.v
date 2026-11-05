@@ -5,9 +5,9 @@
 
 (* Copyright (C) 2018–2020 ANSSI *)
 
-From FreerDPS Require Import init effect freer contract hoare.
+From FreerDPS Require Import init effect freer contract hoare semantics.
 From monae Require Import hierarchy.
-From mathcomp Require Import ssreflect reals choice classical_sets.
+From mathcomp Require Import ssreflect ssrfun reals choice classical_sets.
 From infotheo Require Import fsdist realType_ext.
 
 (** * Definition *)
@@ -55,4 +55,104 @@ Lemma dist_inv1P {R : realType} {S : choiceType} (P : set S) (s : S) :
 Proof.
 split=> [[s' [/fsdist1_inj <- //]] | P_s].
 by exists s.
+Qed.
+
+(** * Semantics Derivation *)
+
+(* CLAUDE: new.  Origin: FreeSpec theories/Core/Component.v
+   ([derive_semantics], [bootstrap], [with_component]) and ComponentFacts.v
+   ([correct_component_derives_compliant_semantics]).  [derive_semantics] is
+   the definition FreeSpec calls [derive_semantics'] in ComponentFacts.v: one
+   step unfolds by computation, so FreeSpec's setoid on semantics is not
+   needed. *)
+
+(** Given a semantics for [Fout], we derive from a component
+    [c : component Fin Fout] an operational semantics for [Fin]: each
+    primitive of [Fin] is interpreted by running its implementation in [c].
+    [derive_semantics] composes components vertically, and [semprod]
+    composes semantics horizontally. *)
+
+CoFixpoint derive_semantics {Fin Fout : effect} {M : freerMonad Fout}
+    (c : component (M := M) Fin Fout) (sem : semantics Fout) :
+    semantics Fin :=
+  mk_semantics (fun A cmd =>
+    (eval_freer sem (c A cmd), derive_semantics c (exec_freer sem (c A cmd)))).
+
+Section derive_semantics_facts.
+Context {Fin Fout : effect} {M : freerMonad Fout}
+  (c : component (M := M) Fin Fout) (sem : semantics Fout).
+
+Lemma eval_derive_semantics {A : UU0} (cmd : Fin A) :
+  eval_effect (derive_semantics c sem) cmd = eval_freer sem (c A cmd).
+Proof. by []. Qed.
+
+Lemma exec_derive_semantics {A : UU0} (cmd : Fin A) :
+  exec_effect (derive_semantics c sem) cmd =
+  derive_semantics c (exec_freer sem (c A cmd)).
+Proof. by []. Qed.
+
+End derive_semantics_facts.
+
+(** A component which uses no effect is enough to build a semantics. *)
+
+Definition bootstrap {Fin : effect} {M : freerMonad eempty}
+    (c : component (M := M) Fin eempty) : semantics Fin :=
+  derive_semantics c eempty_semantics.
+
+(** * In-place Primitives Handling *)
+
+(** [with_component] locally provides the effect [G] within a program, its
+    primitives being handled by the component [c].  [init] runs before the
+    program and [final] after it. *)
+
+Section with_component.
+Context {Fx G : effect} {M : freerMonad (eplus Fx G)} {N : freerMonad Fx}.
+
+Definition with_component_handler (c : component (M := N) G Fx) :
+    eplus Fx G ~~> N :=
+  fun A cmd =>
+    match cmd with
+    | in_left cmd => freer.trigger A cmd
+    | in_right cmd => c A cmd
+    end.
+
+Definition with_component {A : UU0} (init : N unit)
+    (c : component (M := N) G Fx) (final : N unit) (p : M A) : N A :=
+  init >> (denote _ (with_component_handler c) A p >>= fun res =>
+    final >> Ret res).
+
+End with_component.
+
+(** * Compositional Correctness *)
+
+(** If [compo] is correct with respect to [cin] and [cout], with [rel_inv]
+    relating their witnesses, then the semantics derived from [compo] and a
+    semantics complying with [cout] complies with [cin]. *)
+
+Lemma correct_component_derives_compliant_semantics {R : realType}
+    {Fx Fin Fout : effect} `{Fout -<? Fx} {M : inductiveFreerMonad Fx}
+    {Sin Sout : choiceType} (compo : component (M := M) Fin Fx)
+    (cin : contract R Fin Sin) (cout : contract R Fout Sout)
+    (rel_inv : R.-dist Sin -> R.-dist Sout -> Prop)
+    (correct : correct_component compo cin cout rel_inv)
+    (sin : R.-dist Sin) (sout : R.-dist Sout) (init : rel_inv sin sout)
+    (sem : semantics Fx) (comp : compliant_semantics cout sout sem) :
+  compliant_semantics cin sin (derive_semantics compo sem).
+Proof.
+move: sin sout sem init comp.
+cofix derives_compliant=> sin sout sem init comp.
+(* The corecursive call must come first, directly under the constructor. *)
+constructor=> A cmd req; last first.
+  apply: (derives_compliant _ (run_instrument cout sout sem (compo A cmd)).2.1).
+    have [pre_c post_c] := correct sin sout init A cmd req.
+    have [_ inv_next] :=
+      post_c _ _ (run_instrument_post cout sout sem _ comp pre_c).
+    by rewrite eval_derive_semantics /eval_freer -(run_instrumentE cout sout).
+  have [pre_c _] := correct sin sout init A cmd req.
+  rewrite /exec_freer -(run_instrumentE cout sout).
+  exact: run_instrument_compliant.
+have [pre_c post_c] := correct sin sout init A cmd req.
+have [promise_x _] :=
+  post_c _ _ (run_instrument_post cout sout sem _ comp pre_c).
+by rewrite eval_derive_semantics /eval_freer -(run_instrumentE cout sout).
 Qed.
