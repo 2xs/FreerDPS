@@ -54,16 +54,12 @@ move/(congr1 (fsdistmap clientQ)).
 by rewrite fsdistmap_affine !fsdistmap1.
 Qed.
 
+
+
 Definition flip_step is_server ns :
-  forall X, @FlipEff R X -> X -> net_state :=
-  fun T op => match op in (@FlipEff _ T) return T -> net_state with
-  | flipe _ => fun kept =>
-    (* CLAUDE: the flip's result decides the drop (point mass per branch);
-       [drop_new_packet] returns a distribution, not a [net_state]. *)
-    if is_server then
-      {| serverQ := drop_last (serverQ ns) kept; clientQ := clientQ ns |}
-    else
-      {| serverQ := serverQ ns; clientQ := drop_last (clientQ ns) kept |}
+  forall X, @FlipEff R X -> X -> R.-dist net_state :=
+  fun T op => match op in (@FlipEff _ T) return T -> R.-dist net_state with
+  | flipe p => fun _kept => drop_new_packet ns p is_server
   end.
   (* avec prob p :
   dist p {
@@ -99,7 +95,7 @@ Inductive flip_promise is_server (net : net_state):
 Definition flip_contract (is_server : bool) :
 (* (is_server : bool) : *)
     contract R (@FlipEff R) net_state :=
-  make_det_contract
+  make_contract
     (flip_step is_server)
     (flip_requirement is_server)
     (flip_promise is_server).
