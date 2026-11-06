@@ -147,16 +147,16 @@ Inductive choice_eq : forall [A : UU0], M A -> M A -> Prop :=
 | choice_bindf A B (f g : A -> M B) (a : M A) :
     (forall x, choice_eq (f x) (g x)) ->
     choice_eq (a >>= f) (a >>= g)
-| choice1 A (a b : M A) :
+| choice_eq1 A (a b : M A) :
     choice_eq (a <|| 1%:i01 : {prob R} ||> b) a
-| choiceC A (p : {prob R}) (a b : M A) :
+| choice_eqC A (p : {prob R}) (a b : M A) :
     choice_eq (a <|| p ||> b) (b <|| p%:num.~%:i01 ||> a)
-| choicemm A (p : {prob R}) (a : M A) :
+| choice_eqmm A (p : {prob R}) (a : M A) :
     choice_eq (a <|| p ||> a) a
-| choiceA A (p q : {prob R}) (a b c : M A) :
+| choice_eqA A (p q : {prob R}) (a b c : M A) :
     choice_eq (a <|| p ||> (b <|| q ||> c))
       ((a <|| [r_of p, q] ||> b) <|| [s_of p, q] ||> c)
-| choice_bindDl A B (p : {prob R}) (a b : M A) (f : A -> M B) :
+| choice_eq_bindDl A B (p : {prob R}) (a b : M A) (f : A -> M B) :
     choice_eq ((a <|| p ||> b) >>= f)
       ((a >>= f) <|| p ||> (b >>= f)).
 
@@ -166,7 +166,37 @@ Inductive choice_eq : forall [A : UU0], M A -> M A -> Prop :=
 
 #[export] HB.instance Definition _ :=
   isMonadFreerChoiceEqReas.Build Fx R flipprovided (freer Fx)
-    choice1 choiceC choicemm choiceA choice_bindDl.
+    choice_eq1 choice_eqC choice_eqmm choice_eqA choice_eq_bindDl.
+
+Definition denote_flip_provided (M' : probMonad R) (other : Fx ~~> M') :
+    Fx ~~> M' :=
+  fun X e =>
+    if prj (MayProvide := flipprovided.(may_prov)) e is Some cmd then
+      @denote_flipeffect R M' X cmd
+    else other X e.
+
+Lemma feq_implies_denotation (M' : probMonad R) (other : Fx ~~> M') (X : UU0)
+    (m1 m2 : M X) :
+  choice_eq m1 m2 ->
+  denote M' (denote_flip_provided M' other) X m1 =
+    denote M' (denote_flip_provided M' other) X m2.
+Proof.
+elim=>//= [A a b c Hab -> | A B f a b | A B f g a Hfg Ha
+  | A a b | A p a b | A p a | A p q a b c | A B p a b f] //.
+
+- by rewrite !denote_bind=> ? ->.
+- by rewrite !denote_bind; congr (_ >>= _); rewrite !compE; exact: boolp.funext.
+all: rewrite /denote_flip_provided /denote /=.
+all: repeat rewrite !injK_Some !choice_bindDl !bindretf /=.
+- exact: choice1.
+- exact: choiceC.
+- exact: choicemm.
+  exact: choiceA.
+- by repeat (rewrite denote_bind !compE /=);
+    congr choice; exact/esym/denote_bind.
+Qed.
 
 End relation.
 End ChoiceRelation.
+
+Check @denote.
