@@ -192,7 +192,7 @@ all: repeat rewrite !injK_Some !choice_bindDl !bindretf /=.
 - exact: choice1.
 - exact: choiceC.
 - exact: choicemm.
-  exact: choiceA.
+- exact: choiceA.
 - by repeat (rewrite denote_bind !compE /=);
     congr choice; exact/esym/denote_bind.
 Qed.
