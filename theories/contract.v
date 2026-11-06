@@ -14,7 +14,7 @@ From mathcomp Require Import ssreflect ssrfun choice.
 From FreerDPS Require Import init effect freer mathcomp_extra.
 From HB Require Import structures.
 
-From mathcomp Require Import reals.
+From mathcomp Require Import boolp reals.
 From infotheo Require Import fsdist realType_ext.
 
 Local Open Scope signature_scope.
@@ -62,8 +62,13 @@ Definition make_det_contract {R : realType} [F] [S : choiceType]
   : contract R F S :=
   make_contract
     (fun d U cmd x => fsdist1 d >>= fun s => fsdist1 (su s U cmd x))
-    (fun d U cmd => exists s, d = fsdist1 s /\ re s U cmd)
-    (fun d U cmd x => exists s, d = fsdist1 s /\ pr s U cmd x).
+    (* CLAUDE: changed from the point-mass reading
+       [exists s, d = fsdist1 s /\ re s U cmd]: the plain requirement and
+       promise must hold on the whole distribution, so a mix whose parts all
+       satisfy them is accepted. *)
+    (fun d U cmd => fsdistmap (fun s => asbool (re s U cmd)) d = fsdist1 true)
+    (fun d U cmd x =>
+       fsdistmap (fun s => asbool (pr s U cmd x)) d = fsdist1 true).
 
 (** The most simple contract we can define is the one that requires
     anything both for the impure computations which uses the primitives of a

@@ -315,19 +315,16 @@ Local Abbreviation c := (@make_det_contract R _ _ su re pr).
 Lemma pre_trigger1P (cmd : F A) (s : S) :
   pre (c |~ (ptrigger cmd : M _)) (fsdist1 s) <-> re s cmd.
 Proof.
-rewrite pre_to_hoare_triggerP; split=> [[s' [/fsdist1_inj <- //]] | re_s].
-by exists s.
+rewrite pre_to_hoare_triggerP /= fsdistmap1.
+by split=> [/fsdist1_inj/asboolP // | /asboolT ->].
 Qed.
 
 Lemma post_trigger1P (cmd : F A) (s : S) (a : A) (d' : R.-dist S) :
   post (c |~ (ptrigger cmd : M _)) (fsdist1 s) a d' <->
   d' = fsdist1 (su s cmd a) /\ pr s cmd a.
 Proof.
-rewrite post_to_hoare_triggerP /= fsdist1bind.
-split=> [[-> [s' [/fsdist1_inj <- pr_s]]] // | [-> pr_s]].
-split=> //.
-- by rewrite fsdist1bind.
-- split. by rewrite fsdist1bind. by exists s.
+rewrite post_to_hoare_triggerP /= !fsdist1bind fsdistmap1.
+by split=> [[-> /fsdist1_inj/asboolP] | [-> /asboolT ->]].
 Qed.
 
 End det_contract_trigger_helpers.

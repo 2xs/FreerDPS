@@ -2,7 +2,7 @@
 From mathcomp Require Import all_ssreflect all_algebra interval_inference.
 From mathcomp Require Import classical_sets boolp reals Rstruct.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype order.
-From mathcomp Require Import all_analysis.
+From mathcomp Require Import all_analysis finmap.
 From infotheo Require Import convex fsdist realType_ext.
 From monae Require Import preamble hierarchy.
 From FreerDPS Require Import all_freerdps ping_common ping_client_serv_freespec.
@@ -12,7 +12,7 @@ Local Open Scope convex_scope.
 Local Open Scope reals_ext_scope.
 Local Open Scope ring_scope.
 Local Open Scope monae_scope.
-Import ChoiceRelation Order.LTheory.
+Import ChoiceRelation Order.LTheory GRing.Theory Num.Theory.
 
 Section about_freer_flip_monad.
 Context {R : realType} {Fx: effect}
@@ -72,25 +72,32 @@ Definition select_queue (is_server : bool) ns : packet :=
 Definition expected_packet (is_server : bool) : packet :=
   if is_server then Some Ping else Some Pong.
 
-Definition flip_requirement is_server ns :
+(* CLAUDE: the requirement reads the marginal of the queue that the flip may
+   drop, like [contractprod] reads the marginals of a pair.  Every part of the
+   distribution holds the expected packet or is already empty: dropping from
+   an empty queue changes nothing. *)
+Definition flip_requirement is_server (d : R.-dist net_state) :
     forall X, @FlipEff R X -> Prop :=
-  fun _ _ => select_queue is_server ns = expected_packet is_server.
+  fun _ _ => exists q : {prob R}, fsdistmap (select_queue is_server) d
+    = fsdist1 (expected_packet is_server) <| q |> fsdist1 (None : packet).
 
-(* On promise check, we have two things : *)
-(* - The queue that received a change must be either same size or -1 *)
-(* - The other queue must be the same as before *)
-Inductive flip_promise is_server (net : net_state):
+(* CLAUDE: on the distributions:
+   - the flipped queue keeps its marginal with weight [p], is empty otherwise;
+   - the other queue keeps its marginal;
+   - the result is a possible value of the coin: the coin puts a non-zero
+     weight [q] on it. *)
+Definition flip_promise is_server (d : R.-dist net_state) :
     forall X, @FlipEff R X -> X -> Prop :=
-| KEEP_IT (p : {prob R}) :
-  (p%:num > 0) ->
-  select_queue is_server net = expected_packet is_server
-    -> flip_promise is_server net bool (flipe p) true
-| DROP_IT (p : {prob R}) :
-  p%:num > 0 ->
-  select_queue is_server net = None
-  -> (exists ns, select_queue (~~is_server) ns = select_queue (~~is_server) net)
-  -> flip_promise is_server net bool (flipe ((p%:num.~)%:i01)) false.
-  (* /\ exists o, o = select_queue (~~is_server) ns  *)
+  fun X op => match op in (@FlipEff _ X) return X -> Prop with
+  | flipe p => fun kept =>
+    let d' := fsdistbind d (fun ns => drop_new_packet ns p is_server) in
+    fsdistmap (select_queue is_server) d'
+      = fsdistmap (select_queue is_server) d <| p |> fsdist1 (None : packet)
+    /\ fsdistmap (select_queue (~~ is_server)) d'
+       = fsdistmap (select_queue (~~ is_server)) d
+    /\ exists (q : {prob R}) (rest : R.-dist bool), q != 0%:i01
+       /\ fsdist1 true <| p |> fsdist1 false = fsdist1 kept <| q |> rest
+  end.
 
 Definition flip_contract (is_server : bool) :
 (* (is_server : bool) : *)
@@ -99,6 +106,35 @@ Definition flip_contract (is_server : bool) :
     (flip_step is_server)
     (flip_requirement is_server)
     (flip_promise is_server).
+
+(* CLAUDE: test.  The promise is not empty: for any distribution and any
+   coin, it holds for every result the coin allows. *)
+Lemma flip_promise_possible is_server (d : R.-dist net_state) (p : {prob R})
+    (kept : bool) (possible : if kept then p != 0%:i01 else p != 1%:i01) :
+  flip_promise is_server d bool (flipe p) kept.
+Proof.
+have bind_cst (e : R.-dist packet) : fsdistbind d (fun=> e) = e.
+  apply/fsdist_ext=> x; rewrite fsdistbindE -big_distrl /=.
+  by rewrite FSDist.f1 mul1r.
+rewrite /= /fsdistmap !fsdistbindA; split; [|split].
+- have flipped : (fun ns => fsdistbind (drop_new_packet ns p is_server)
+        (fun ns' => fsdist1 (select_queue is_server ns')))
+      = (fun ns => fsdist1 (select_queue is_server ns))
+        <| p |> (fun=> fsdist1 (None : packet)).
+    apply: boolp.funext=> ns.
+    transitivity (fsdist1 (select_queue is_server ns)
+      <| p |> fsdist1 (None : packet)); last by [].
+    by case: is_server; case: ns=> ? ?;
+      rewrite /= fsdist_conv_bind_left_distr !fsdist1bind.
+  by rewrite flipped fsdist_conv_bind_right_distr bind_cst.
+- congr fsdistbind; apply: boolp.funext=> ns.
+  by case: is_server; case: ns=> ? ?; rewrite /= fsdist_conv_bind_left_distr
+    !fsdist1bind convmm.
+case: kept possible=> possible.
+  by exists p, (fsdist1 false).
+exists (p%:num.~)%:i01, (fsdist1 true); split; last exact: convC.
+by apply/prob_gt0; rewrite /= subr_gt0; exact/prob_lt1.
+Qed.
 
 End flip_contract.
 Section syntax.
@@ -134,6 +170,10 @@ Ltac ssubst :=
 | [ |- _] => subst
   end.
 
+Lemma drop_new_packet1 ns is_server :
+  drop_new_packet ns 1%:i01 is_server = fsdist1 ns.
+Proof. by case: is_server; case: ns=> ? ?; rewrite /= conv1. Qed.
+
 Lemma pre_transmit1 {A} is_server (a : A) (net : net_state)
     (queued : select_queue is_server net = expected_packet is_server) :
   pre (flip_contract is_server |~ transmit 1%:i01 a) (fsdist1 net).
@@ -141,35 +181,47 @@ Proof.
 rewrite /transmit /freer_choice /flip.
 rewrite freer_to_hoare_bindE.
 split; last by case; rewrite pre_ret.
-by rewrite pre_trigger1P /=.
-(*case=>/= [sq cq].
-rewrite post_to_hoare_triggerP /==> -[Hnet Hp].
-inversion Hp; ssubst; last first.
-- by move: H0 H2; rewrite onem_eq1=> ->; rewrite ltxx.
-by case: is_server Hnet queued Hp H3=> /=;
-rewrite /server_keep_or_drop /client_keep_or_drop /=;
-  case: net=> [s0 c0] /=;
-  rewrite conv1=> /[swap] -> /fsdist1_inj -> /=;
-  rewrite pre_ret.*)
+rewrite pre_to_hoare_triggerP /= /flip_requirement fsdistmap1 queued.
+by exists 1%:i01; rewrite conv1.
 Qed.
 
 Lemma post_transmit1 {A} is_server {a : A} {ins : net_state}
     {fns : R.-dist net_state} {result : option A}
-    (queued : select_queue is_server ins = expected_packet is_server)
     (run : post (flip_contract is_server |~ transmit 1%:i01 a)
       (fsdist1 ins) result fns) :
   result = Some a /\ fns = fsdist1 ins.
 Proof.
 move: run.
-rewrite  /transmit /freer_choice /flip.
-rewrite freer_to_hoare_bindE.
-case=> res; case=> net; case.
-rewrite post_trigger1P /=; case.
-case: is_server queued=> /=;
-  case: ins=> [s0 c0] /= -> ->.
-all: by inversion 1; ssubst; [
-    rewrite post_ret; case=> -> <- |
-    move: H0 H2; rewrite onem_eq1=> ->; rewrite ltxx].
+rewrite /transmit /freer_choice /flip freer_to_hoare_bindE.
+case=> kept [d1 []].
+rewrite post_to_hoare_triggerP fsdist1bind /= drop_new_packet1.
+case=> -> [_ [_ [q [rest [q_neq0]]]]].
+rewrite conv1.
+case: kept; first by rewrite post_ret=> _ [<- <-].
+move/(congr1 (fun d : R.-dist bool => d false)).
+rewrite fsdist_convE fsdist1xx fsdist10 // avgRE mulr1=> /esym/eqP.
+rewrite gt_eqF // ltr_pwDl ?mulr_ge0 //.
+exact/prob_gt0.
+Qed.
+
+(* CLAUDE: test.  For any coin, the mix left by a flip is accepted by the next
+   flip and by [recv]: the dropped part only holds an empty queue. *)
+Lemma flip_requirement_after_flip is_server ns (p : {prob R})
+    (queued : select_queue is_server ns = expected_packet is_server) :
+  flip_requirement is_server (drop_new_packet ns p is_server) bool (flipe p).
+Proof.
+exists p; rewrite -queued.
+by case: is_server {queued}; case: ns=> ? ?;
+  rewrite /= fsdistmap_affine !fsdistmap1.
+Qed.
+
+Lemma recv_requirement_after_flip ns (p : {prob R})
+    (queued : serverQ ns = Some Ping) :
+  requirement server_c (drop_new_packet ns p true) RECV.
+Proof.
+case: ns queued=> ? ? /= ->.
+rewrite fsdistmap_affine !fsdistmap1 !asboolT ?convmm //.
+all: exact/eqP.
 Qed.
 
 End transmission.

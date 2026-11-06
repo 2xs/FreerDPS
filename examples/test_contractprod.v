@@ -1,4 +1,4 @@
-From mathcomp Require Import ssreflect ssrfun ssrnat choice reals.
+From mathcomp Require Import ssreflect ssrfun ssrbool ssrnat choice boolp reals.
 From infotheo Require Import fsdist.
 From monae Require Import hierarchy.
 From FreerDPS Require Import all_freerdps.
@@ -31,10 +31,10 @@ Lemma put_then_get_pre (n : nat) (b : bool) :
 Proof.
 rewrite freer_to_hoare_bindE; split.
   rewrite to_hoare_triggerE /=; apply/contractprod_requirement1.
-  by rewrite /gen_requirement /=; split=> //; exists n.
+  by rewrite /gen_requirement /=; split=> //; rewrite fsdistmap1 asboolT.
 move=> [] d1; rewrite to_hoare_triggerE => -[-> _].
 rewrite put3_update to_hoare_triggerE /=; apply/contractprod_requirement1.
-by rewrite /gen_requirement /=; split=> //; exists 3%N.
+by rewrite /gen_requirement /=; split=> //; rewrite fsdistmap1 asboolT.
 Qed.
 
 Lemma put_then_get_post (n : nat) (b : bool) (m : nat)
@@ -46,7 +46,7 @@ move: run; rewrite freer_to_hoare_bindE => -[[] [d1 []]].
 rewrite to_hoare_triggerE => -[-> _].
 rewrite put3_update to_hoare_triggerE => -[->].
 move/contractprod_promise1=> [+ _].
-rewrite /gen_promise /= => -[s [/fsdist1_inj <- <-]]; split=> //.
+rewrite /gen_promise /= fsdistmap1 => /fsdist1_inj/asboolP <-; split=> //.
 by rewrite /gen_state_update /= fsdist1bind /gen_state_update /=
   !fsdist1bind dist_pair1.
 Qed.

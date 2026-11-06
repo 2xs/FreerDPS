@@ -219,11 +219,11 @@ rewrite to_hoare_triggerE /=.
 rewrite /gen_requirement /gen_state_update /gen_promise.
 case: prj=> [door_op |_ [-> _]]; last by exists t.
 rewrite /= fsdist1bind.
-move: door_op x; case=> d /= [] [s0 [/fsdist1_inj ts0 caller]] [-> _];
-  try by exists t.
+move: door_op x; case=> d /= []; rewrite fsdistmap1;
+  move=> /fsdist1_inj/asboolP caller [-> _]; try by exists t.
 all: rewrite fsdist1bind /= dist_inv1P //.
 apply: (one_door_safe_all_doors_safe (toggle d t) d).
-move: caller; rewrite -ts0.
+move: caller.
 rewrite tog_equ_1 tog_equ_2 negbK.
 by case: (door_state d t); case: (door_state (opposite_door d) t)
   => //= /(_ isT).
