@@ -205,5 +205,3 @@ Qed.
 
 End relation.
 End ChoiceRelation.
-
-Check @denote.
