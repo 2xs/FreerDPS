@@ -45,6 +45,13 @@ Context {R : realType} {pM : probMonad R}.
 Definition denote_flipeffect : FlipEff ~~> pM :=
   fun X cmd => let: flipe p := cmd in bcoin p.
 
+Definition denote_flip_provided {Fx: effect} {flipprovided: FlipEff -< Fx}
+  (other : Fx ~~> pM) : Fx ~~> pM :=
+  fun X e =>
+    if prj (MayProvide := flipprovided.(may_prov)) e is Some cmd then
+      @denote_flipeffect X cmd
+    else other X e.
+
 Lemma denote_flipeffectE p :
   denote_flipeffect _ (flipe p) = bcoin p.
 Proof. by []. Qed.
@@ -86,7 +93,12 @@ HB.mixin Record isMonadFreerChoiceEqReas (Fx : effect)
   freer_choice_bindDl : forall (A B : UU0) (p : {prob R}) (a b : M A)
       (f : A -> M B),
     ((a <|| p ||> b) >>= f) ≈
-      ((a >>= f) <|| p ||> (b >>= f))
+      ((a >>= f) <|| p ||> (b >>= f));
+  freer_choice_denote : forall (N : probMonad R) (other : Fx ~~> N) (A : UU0)
+      (a b : M A), a ≈ b ->
+    (* This flip handler might need to be externalised *)
+    denote N (denote_flip_provided other) A a
+    = denote N (denote_flip_provided other) A b
 }.
 
 #[short(type=choiceEqFreerMonad)]
@@ -147,16 +159,16 @@ Inductive choice_eq : forall [A : UU0], M A -> M A -> Prop :=
 | choice_bindf A B (f g : A -> M B) (a : M A) :
     (forall x, choice_eq (f x) (g x)) ->
     choice_eq (a >>= f) (a >>= g)
-| choice1 A (a b : M A) :
+| choice_eq1 A (a b : M A) :
     choice_eq (a <|| 1%:i01 : {prob R} ||> b) a
-| choiceC A (p : {prob R}) (a b : M A) :
+| choice_eqC A (p : {prob R}) (a b : M A) :
     choice_eq (a <|| p ||> b) (b <|| p%:num.~%:i01 ||> a)
-| choicemm A (p : {prob R}) (a : M A) :
+| choice_eqmm A (p : {prob R}) (a : M A) :
     choice_eq (a <|| p ||> a) a
-| choiceA A (p q : {prob R}) (a b c : M A) :
+| choice_eqA A (p q : {prob R}) (a b c : M A) :
     choice_eq (a <|| p ||> (b <|| q ||> c))
       ((a <|| [r_of p, q] ||> b) <|| [s_of p, q] ||> c)
-| choice_bindDl A B (p : {prob R}) (a b : M A) (f : A -> M B) :
+| choice_eq_bindDl A B (p : {prob R}) (a b : M A) (f : A -> M B) :
     choice_eq ((a <|| p ||> b) >>= f)
       ((a >>= f) <|| p ||> (b >>= f)).
 
@@ -164,9 +176,32 @@ Inductive choice_eq : forall [A : UU0], M A -> M A -> Prop :=
   @hasWBisim.Build (freer Fx) choice_eq choice_refl choice_sym choice_trans
     choice_bindm choice_bindf.
 
+Lemma feq_implies_denotation (M' : probMonad R) (other : Fx ~~> M') (X : UU0)
+    (m1 m2 : M X) :
+  choice_eq m1 m2 ->
+  denote M' (denote_flip_provided other) X m1 =
+    denote M' (denote_flip_provided other) X m2.
+Proof.
+elim=>//= [A a b c Hab -> | A B f a b | A B f g a Hfg Ha
+  | A a b | A p a b | A p a | A p q a b c | A B p a b f] //.
+
+- by rewrite !denote_bind=> ? ->.
+- by rewrite !denote_bind; congr (_ >>= _); rewrite !compE; exact: boolp.funext.
+all: rewrite /denote_flip_provided /denote /=.
+all: repeat rewrite !injK_Some !choice_bindDl !bindretf /=.
+- exact: choice1.
+- exact: choiceC.
+- exact: choicemm.
+- exact: choiceA.
+- by repeat (rewrite denote_bind !compE /=);
+    congr choice; exact/esym/denote_bind.
+Qed.
+
+
 #[export] HB.instance Definition _ :=
   isMonadFreerChoiceEqReas.Build Fx R flipprovided (freer Fx)
-    choice1 choiceC choicemm choiceA choice_bindDl.
+    choice_eq1 choice_eqC choice_eqmm choice_eqA choice_eq_bindDl
+    feq_implies_denotation.
 
 End relation.
 End ChoiceRelation.
