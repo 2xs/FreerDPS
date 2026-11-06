@@ -2,11 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. *)
 
+
 (* Copyright (C) 2018–2020 ANSSI *)
 
 From FreerDPS Require Import init effect freer contract hoare.
 From monae Require Import hierarchy.
-From mathcomp Require Import reals choice.
+From mathcomp Require Import ssreflect reals choice classical_sets.
 From infotheo Require Import fsdist realType_ext.
 
 (** * Definition *)
@@ -30,15 +31,28 @@ From infotheo Require Import fsdist realType_ext.
 Definition component (Fin Fout : effect) `{M : freerMonad Fout} : Type :=
   Fin ~~> M.
 
-Definition correct_component {R : realType} {Fx Fin Fout : effect} `{Fout -<? Fx} {M : freerMonad Fx}
-  {Sin Sout : choiceType}
+Definition correct_component {R : realType} {Fx Fin Fout : effect}
+    `{Fout -<? Fx} {M : freerMonad Fx} {Sin Sout : choiceType}
     (compo : component Fin Fx) (cin : contract R Fin Sin)
-    (cout : contract R Fout Sout) (rel_inv : R.-dist Sin -> Sout -> Prop) :
+    (cout : contract R Fout Sout)
+    (rel_inv : R.-dist Sin -> R.-dist Sout -> Prop) :
   Prop :=
-  forall (sin : Sin) (sout : Sout) (init : rel_inv (fsdist1 sin) sout) (T : Type)
-      (cmd : Fin T) (req : requirement cin sin cmd),
+  forall (sin : R.-dist Sin) (sout : R.-dist Sout) (init : rel_inv sin sout)
+      (T : Type) (cmd : Fin T) (req : requirement cin sin cmd),
     pre (cout |~ compo T cmd) sout /\
-    forall (t : T) (sout' : Sout),
+    forall (t : T) (sout' : R.-dist Sout),
       post (cout |~ (compo T cmd : M _)) sout t sout' ->
       promise cin sin cmd t /\
-      rel_inv (state_update cin sin cmd t) sout'.
+        rel_inv (fsdistbind sin (fun s=>state_update cin s cmd t)) sout'.
+
+(* This should probably go in some other file and have a different name*)
+Definition dist_inv {R : realType} {S : choiceType} (P : set S)
+    (d : R.-dist S) : Prop :=
+  exists s, d = fsdist1 s /\ P s.
+
+Lemma dist_inv1P {R : realType} {S : choiceType} (P : set S) (s : S) :
+  dist_inv P (fsdist1 s : R.-dist S) <-> P s.
+Proof.
+split=> [[s' [/fsdist1_inj <- //]] | P_s].
+by exists s.
+Qed.

@@ -13,7 +13,7 @@ Import ChoiceRelation.
 
 Section about_freer_flip_monad.
 Context {R : realType} {Fx: effect}
-  `{@FlipEff R -< Fx} {M : choiceEqFreerMonad Fx R _}.
+  `{@FlipEff R -< Fx} {M : choiceEqFreerMonad Fx R}.
 
 Fact freer_flip_choice (p : {prob R}) :
   (Ret true <|| p ||> Ret false : M _)  ≈  (flip p).
@@ -31,7 +31,7 @@ End about_freer_flip_monad.
 
 Section lossy_round_trip.
 Context {R : realType} {Fx: effect}
-  `{@FlipEff R -< Fx} {M : choiceEqFreerMonad Fx R _}.
+  `{@FlipEff R -< Fx} {M : choiceEqFreerMonad Fx R}.
 Implicit Types (m : msg) (psucc : {prob R}).
 
 Definition transmit psucc m : M (option msg) :=
@@ -94,7 +94,7 @@ Proof.
   by rewrite p_of_rs1 (negbTE d1) andbF.
   (* Give RHS the same form as LHS *)
   rewrite -[X in _ ≈ _ <|| _ ||> X]
-    (freer_choicemm _ [q_of d, d] (Ret false)).
+    (freer_choicemm _ _ [q_of d, d] (Ret false)).
   by rewrite freer_choiceA (s_of_pqK p1) (r_of_pqK p1 d0).
 
 Qed.
@@ -126,7 +126,7 @@ rewrite -(flip_or_true [p_of d, d] (p_exchanges d n)).
 have p1 : [p_of d, d] != 1%:i01.
   by rewrite p_of_rs1 (negbTE d1) andbF.
 rewrite -[X in _ ≈ _ <|| _ ||> X]
-  (freer_choicemm _ [q_of d, d] (flip (p_exchanges d n))).
+  (freer_choicemm _ _ [q_of d, d] (flip (p_exchanges d n))).
 by rewrite freer_choiceA (s_of_pqK p1) (r_of_pqK p1 d0).
 Qed.
 End lossy_round_trip.
