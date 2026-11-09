@@ -42,42 +42,42 @@ Declare Scope semantics_scope.
 Bind Scope semantics_scope with semantics.
 Delimit Scope semantics_scope with semantics.
 
-Definition run_effect {F : effect} {A : Type} (sem : semantics F)
+Definition run_effect {F : effect} {A : UU0} (sem : semantics F)
     (cmd : F A) : A * semantics F :=
   let: mk_semantics f := sem in f A cmd.
 
-Definition eval_effect {F : effect} {A : Type} (sem : semantics F)
+Definition eval_effect {F : effect} {A : UU0} (sem : semantics F)
     (cmd : F A) : A :=
   (run_effect sem cmd).1.
 
-Definition exec_effect {F : effect} {A : Type} (sem : semantics F)
+Definition exec_effect {F : effect} {A : UU0} (sem : semantics F)
     (cmd : F A) : semantics F :=
   (run_effect sem cmd).2.
 
-Lemma run_effectE {F : effect} {A : Type} (sem : semantics F) (cmd : F A) :
+Lemma run_effectE {F : effect} {A : UU0} (sem : semantics F) (cmd : F A) :
   run_effect sem cmd = (eval_effect sem cmd, exec_effect sem cmd).
 Proof. by rewrite /eval_effect /exec_effect; case: run_effect. Qed.
 
 (** The simplest semantics is the one of [eempty], the empty effect. *)
 
-Definition eempty_semantics@{u|+} : semantics@{u} eempty :=
-  mk_semantics (fun (A : Type@{u}) (cmd : eempty A) =>
-    match cmd return A * semantics@{u} eempty with end).
+Definition eempty_semantics : semantics eempty :=
+  mk_semantics (fun (A : UU0) (cmd : eempty A) =>
+    match cmd return A * semantics eempty with end).
 
 (** We also provide a semantics for the [STORE S] effect. *)
 
-CoFixpoint store@{u +|+} {S : Type} (s : S) : semantics@{u} (STORE S) :=
-  mk_semantics (fun (A : Type@{u}) (cmd : STORE S A) =>
-    match cmd in STORE _ A return A * semantics@{u} (STORE S) with
+CoFixpoint store {S : UU0} (s : S) : semantics (STORE S) :=
+  mk_semantics (fun (A : UU0) (cmd : STORE S A) =>
+    match cmd in STORE _ A return A * semantics (STORE S) with
     | Get => (s, store s)
     | Put s' => (tt, store s')
     end).
 
 (** Operational semantics can be composed horizontally with [semprod]. *)
 
-CoFixpoint semprod@{u +|+} {F E : effect} (sem_f : semantics@{u} F)
-    (sem_e : semantics@{u} E) : semantics@{u} (eplus F E) :=
-  mk_semantics (fun (A : Type@{u}) (cmd : eplus F E A) =>
+CoFixpoint semprod {F E : effect} (sem_f : semantics F)
+    (sem_e : semantics E) : semantics (eplus F E) :=
+  mk_semantics (fun (A : UU0) (cmd : eplus F E A) =>
     match cmd with
     | in_left cmd =>
         let: (x, next) := run_effect sem_f cmd in (x, semprod next sem_e)
@@ -193,12 +193,12 @@ Context {R : realType} {Fx F : effect} `{F -<? Fx} {S : choiceType}
   (c : contract R F S).
 
 Lemma compliant_semantics_promise (d : R.-dist S) (sem : semantics Fx)
-    {A : Type} (cmd : Fx A) (req : gen_requirement c d cmd) :
+    {A : UU0} (cmd : Fx A) (req : gen_requirement c d cmd) :
   compliant_semantics c d sem -> gen_promise c d cmd (eval_effect sem cmd).
 Proof. by move=> comp; case: d sem / comp req => d sem callee _ /callee. Qed.
 
 Lemma compliant_semantics_next (d : R.-dist S) (sem : semantics Fx)
-    {A : Type} (cmd : Fx A) (req : gen_requirement c d cmd) :
+    {A : UU0} (cmd : Fx A) (req : gen_requirement c d cmd) :
   compliant_semantics c d sem ->
   compliant_semantics c (gen_state_update c d cmd (eval_effect sem cmd))
     (exec_effect sem cmd).
@@ -228,12 +228,12 @@ Lemma store_complies_to_store_specs {R : realType} {S : choiceType} (s : S) :
 Proof.
 have store_compliant : forall (d : R.-dist S) (s : S), d = fsdist1 s ->
     compliant_semantics (store_specs R S) d (store s).
-  cofix store_compliant=> d {}s ->.
+- cofix store_compliant=> d {}s ->.
   constructor=> A cmd _.
-    by exists s; split=> //; case: A / cmd.
-  by case: A / cmd=> [|s']; apply: store_compliant;
+  + by exists s; split=> //; case: cmd.
+  + by case: A / cmd=> [|s']; apply: store_compliant;
     rewrite /gen_state_update /= !fsdist1bind.
-exact: store_compliant.
+- exact: store_compliant.
 Qed.
 
 (** * Instrumented Runs *)
