@@ -62,10 +62,6 @@ Definition make_det_contract {R : realType} [F] [S : choiceType]
   : contract R F S :=
   make_contract
     (fun d U cmd x => fsdist1 d >>= fun s => fsdist1 (su s U cmd x))
-    (* CLAUDE: changed from the point-mass reading
-       [exists s, d = fsdist1 s /\ re s U cmd]: the plain requirement and
-       promise must hold on the whole distribution, so a mix whose parts all
-       satisfy them is accepted. *)
     (fun d U cmd => fsdistmap (fun s => asbool (re s U cmd)) d = fsdist1 true)
     (fun d U cmd x =>
        fsdistmap (fun s => asbool (pr s U cmd x)) d = fsdist1 true).
@@ -139,10 +135,6 @@ Lemma dist_pair1 {R : realType} {A B : choiceType} (a : A) (b : B) :
   dist_pair (fsdist1 a) (fsdist1 b) = fsdist1 (a, b) :> R.-dist (A * B).
 Proof. by rewrite /dist_pair fsdist1bind fsdistmap1. Qed.
 
-(* CLAUDE: revived (was commented out with "TODO: Check if this works properly
-   with an example").  Fix: [state_update] receives a plain state [s], so each
-   component is updated from the point mass of its projection; requirement and
-   promise read the marginals of the distribution. *)
 Definition contractprod {R : realType} {Fx F E : effect} `{F -< Fx, E -< Fx}
     {ΩF ΩE : choiceType}
     (ci : contract R F ΩF) (cj : contract R E ΩE)

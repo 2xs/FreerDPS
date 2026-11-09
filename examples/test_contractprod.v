@@ -3,7 +3,8 @@ From infotheo Require Import fsdist.
 From monae Require Import hierarchy.
 From FreerDPS Require Import all_freerdps.
 
-(* CLAUDE: new.  Checks [contractprod] on two stores: each contract only sees
+(* File written by claude to verify that contractprod works correctly. *)
+(* Checks [contractprod] on two stores: each contract only sees
    its own effect and its own component of the product witness. *)
 
 Local Open Scope contract_scope.

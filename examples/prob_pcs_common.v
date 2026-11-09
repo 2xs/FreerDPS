@@ -55,8 +55,6 @@ move/(congr1 (fsdistmap clientQ)).
 by rewrite fsdistmap_affine !fsdistmap1.
 Qed.
 
-
-
 Definition flip_step is_server ns :
   forall X, @FlipEff R X -> X -> R.-dist net_state :=
   fun T op => match op in (@FlipEff _ T) return T -> R.-dist net_state with
@@ -73,20 +71,11 @@ Definition select_queue (is_server : bool) ns : packet :=
 Definition expected_packet (is_server : bool) : packet :=
   if is_server then Some Ping else Some Pong.
 
-(* CLAUDE: the requirement reads the marginal of the queue that the flip may
-   drop, like [contractprod] reads the marginals of a pair.  Every part of the
-   distribution holds the expected packet or is already empty: dropping from
-   an empty queue changes nothing. *)
 Definition flip_requirement is_server (d : R.-dist net_state) :
     forall X, @FlipEff R X -> Prop :=
   fun _ _ => exists q : {prob R}, fsdistmap (select_queue is_server) d
     = fsdist1 (expected_packet is_server) <| q |> fsdist1 (None : packet).
 
-(* CLAUDE: on the distributions:
-   - the flipped queue keeps its marginal with weight [p], is empty otherwise;
-   - the other queue keeps its marginal;
-   - the result is a possible value of the coin: the coin puts a non-zero
-     weight [q] on it. *)
 Definition flip_promise is_server (d : R.-dist net_state) :
     forall X, @FlipEff R X -> X -> Prop :=
   fun X op => match op in (@FlipEff _ X) return X -> Prop with
@@ -101,15 +90,13 @@ Definition flip_promise is_server (d : R.-dist net_state) :
   end.
 
 Definition flip_contract (is_server : bool) :
-(* (is_server : bool) : *)
     contract R (@FlipEff R) net_state :=
   make_contract
     (flip_step is_server)
     (flip_requirement is_server)
     (flip_promise is_server).
 
-(* CLAUDE: test.  The promise is not empty: for any distribution and any
-   coin, it holds for every result the coin allows. *)
+(* TODO: Check if this lemma is useful. *)
 Lemma flip_promise_possible is_server (d : R.-dist net_state) (p : {prob R})
     (kept : bool) (possible : if kept then p != 0%:i01 else p != 1%:i01) :
   flip_promise is_server d bool (flipe p) kept.
@@ -205,8 +192,6 @@ rewrite gt_eqF // ltr_pwDl ?mulr_ge0 //.
 exact/prob_gt0.
 Qed.
 
-(* CLAUDE: test.  For any coin, the mix left by a flip is accepted by the next
-   flip and by [recv]: the dropped part only holds an empty queue. *)
 Lemma flip_requirement_after_flip is_server ns (p : {prob R})
     (queued : select_queue is_server ns = expected_packet is_server) :
   flip_requirement is_server (drop_new_packet ns p is_server) bool (flipe p).
