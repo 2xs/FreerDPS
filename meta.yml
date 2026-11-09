@@ -2,6 +2,7 @@
 fullname: Freer Equational Reasoning for Distributed and Probabilistic Systems
 shortname: FreerDPS
 organization: FreerDPS
+branch: main
 community: false
 action: true
 coqdoc: false
@@ -48,9 +49,14 @@ dependencies:
     [MathComp](https://math-comp.github.io)
 - opam:
     name: rocq-mathcomp-analysis
-    version: '{>= "1.18.0"}'
+    version: '{>= "1.19.0"}'
   description: |-
     [MathComp Analysis](https://github.com/math-comp/analysis)
+- opam:
+    name: rocq-infotheo
+    version: '{>= "0.9.9"}'
+  description: |-
+    [Infotheo](https://github.com/affeldt-aist/infotheo)
 - opam:
     name: rocq-monae
     version: '{= "0.9.3" | = "dev"}'
@@ -59,7 +65,7 @@ dependencies:
 # For PoS-Nsb
 - opam:
     name: rocq-mathcomp-analysis-stdlib
-    version: '{>= "1.18.0"}'
+    version: '{>= "1.19.0"}'
   description: |-
     [MathComp Analysis Stdlib compatibility](https://github.com/math-comp/analysis)
 - opam:

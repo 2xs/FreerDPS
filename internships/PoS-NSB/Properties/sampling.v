@@ -3,8 +3,7 @@ From mathcomp Require Import boot order ssralg interval interval_inference.
 From mathcomp Require Import poly ssrnum ssrint finmap.
 From mathcomp Require Import unstable.
 From mathcomp Require Import boolp classical_sets functions cardinality fsbigop.
-From Stdlib Require Reals.
-Require Import Interval.Tactic.
+Require Reals Interval.Tactic.
 From mathcomp Require Import (canonicals) Rstruct Rstruct_topology.
 From HB Require Import structures.
 From mathcomp Require Import exp numfun lebesgue_measure lebesgue_integral.
@@ -50,15 +49,11 @@ Unset Printing Implicit Defensive.
 (*   Bernoulli trial is the product of each moment generating function.       *)
 (* - exp2_le8: inequality solved by interval.                                 *)
 (* - xlnx_lbound_i01: lower bound for x * ln x in the interval `]0, 1[.       *)
-(* - xlnx_ubound_i1y: upper bound for x * ln x for x greater than 1.          *)
 (* - sampling_ineq1: Concentration inequality on a Bernoulli trial X,         *)
 (*   bounding the probability of X >= (1+delta) * 'E_(\X_n P)[X]              *)
 (* - sampling_ineq2: Specialization of sampling_ineq1 using xlnx_lbound_i12   *)
 (* - sampling_ineq3: Concentration inequality on a Bernoulli trial X,         *)
 (*   bounding the probability of X <= (1-delta) * 'E_(\X_n P)[X]              *)
-(* - sampling_ineq4: Combines the previous two inequalities to obtain a bound *)
-(*   on the probability of `|X - 'E_(\X_n P)[X]| >= delta * 'E_(\X_n P)[X]    *)
-(* - sampling: The main sampling theorem combining the above inequalities.    *)
 (******************************************************************************)
 
 Import Order.TTheory GRing.Theory Num.Def Num.Theory.
@@ -72,8 +67,7 @@ Reserved Notation "\X_ n P" (at level 10, n, P at next level,
   format "\X_ n  P").
 
 (* PR in progress *)
-Lemma integrable_prod_measP {d1} {T1 : measurableType d1} d2 {T2 :
-  measurableType d2}
+Lemma integrable_prod_measP {d1} {T1 : measurableType d1} d2 {T2 : measurableType d2}
   {R : realType} (m1 : {sigma_finite_measure set T1 -> \bar R})
   (m2 : {sigma_finite_measure set T2 -> \bar R}) (f : T1 * T2 -> \bar R) :
   (m1 \x m2)%E.-integrable [set: T1 * T2] f <->
@@ -85,16 +79,6 @@ split => /integrableP[mf intf]; apply/integrableP; split => //.
 - rewrite (eq_measure_integral (m1 \x^ m2)%E)//= => C mC _.
   by apply: product_measure_unique => //= *; rewrite product_measure2E.
 Qed.
-
-(* PR in progress *)
-Lemma integral_prod_meas1E {d1} {T1 : measurableType d1}
-    {d2} {T2 : measurableType d2} {R : realType}
-    (m1 : {sigma_finite_measure set T1 -> \bar R})
-    (m2 : {sigma_finite_measure set T2 -> \bar R}) (f : T1 * T2 -> \bar R) :
-  (m1 \x m2)%E.-integrable [set: T1 * T2] f ->
-  (\int[m1 \x^ m2]_x f x = \int[(m1 \x m2)%E]_z f z)%E.
-Proof. by move=> intf; rewrite -integral12_prod_meas1// integral12_prod_meas2.
-  Qed.
 
 Section PR_to_hoelder.
 Context d (T : measurableType d) (R : realType).
@@ -183,17 +167,12 @@ Qed.
 HB.instance Definition _ n (s : n.-tuple {mfun T >-> R}) :=
   isMeasurableFun.Build _ _ _ _ (\sum_(i < n) Tnth s i) (measurable_sum_Tnth s).
 
-Lemma measurable_prod_Tnth m n (s : m.-tuple {mfun T >-> R}) (f : 'I_n -> 'I_m)
-  :
+Lemma measurable_prod_Tnth m n (s : m.-tuple {mfun T >-> R}) (f : 'I_n -> 'I_m) :
   measurable_fun [set: m.-tuple T] (\prod_(i < n) Tnth s (f i))%R.
 Proof.
 rewrite fct_prodE.
 by apply: measurable_prod => /= i _; apply/measurableT_comp.
 Qed.
-
-HB.instance Definition _ m n (s : m.-tuple {mfun T >-> R}) (f : 'I_n -> 'I_m) :=
-  isMeasurableFun.Build _ _ _ _ (\prod_(i < n) Tnth s (f i))
-    (measurable_prod_Tnth s f).
 
 End Tnth.
 
@@ -223,13 +202,6 @@ have := ij0 t; apply; split => //.
 suff: t = u by move=> ->.
 rewrite (tuple_eta t) (tuple_eta u) hut.
 by apply/val_inj => /=; rewrite tut.
-Qed.
-
-Lemma range_pair_of_tuple n :
-  range (pair_of_tuple (n:=n)) = [set: T * n.-tuple T].
-Proof.
-rewrite -subTset => -[x y] _; exists (x :: y) => //=.
-by rewrite /pair_of_tuple/= theadE//; congr pair; exact/val_inj.
 Qed.
 
 Definition tuple_of_pair n (w : T * n.-tuple T) :=
@@ -286,8 +258,7 @@ Let power_measureP n : @power_measure n set0 = 0
 Proof.
 elim: n => //= [|n ih].
   by repeat split => //; exact: measure_semi_sigma_additive.
-pose build_pow_meas := isMeasure.Build _ _ _ (@power_measure n) ih.1 ih.2.1
-  ih.2.2.
+pose build_pow_meas := isMeasure.Build _ _ _ (@power_measure n) ih.1 ih.2.1 ih.2.2.
 pose pow_meas : measure _ R := HB.pack (@power_measure n) build_pow_meas.
 pose Ppow_meas : measure _ R := (P \x^ pow_meas)%E.
 split.
@@ -296,8 +267,7 @@ split.
   by rewrite (_ : @power_measure n = pow_meas)// integral_cst// mul0e.
 split.
   by move=> A; rewrite (_ : @power_measure n = pow_meas).
-rewrite (_ : @power_measure n = pow_meas)// (_ : (P \x^ pow_meas)%E =
-  Ppow_meas)//.
+rewrite (_ : @power_measure n = pow_meas)// (_ : (P \x^ pow_meas)%E = Ppow_meas)//.
 move=> F mF dF mUF.
 rewrite image_bigcup; apply: measure_semi_sigma_additive.
 - by move=> i ; apply: measurable_image_pair_of_tuple.
@@ -353,8 +323,7 @@ Lemma ge0_integral_power_measureS (P : {finite_measure set T -> \bar R})
   \int[\X_n.+1 P]_w (f w)%:E = \int[P \x^ \X_n P]_w (f (w.1 :: w.2))%:E.
 Proof.
 move=> mf f0.
-rewrite -(@ge0_integral_pushforward _ _ _ _ R _ (@measurable_tuple_of_pair _ _
-  n) _
+rewrite -(@ge0_integral_pushforward _ _ _ _ R _ (@measurable_tuple_of_pair _ _ n) _
     setT (fun x : n.+1.-tuple T => (f x)%:E)).
 - exact: measurableT.
 - exact: measurableT_comp.
@@ -402,8 +371,7 @@ rewrite -(@integral_pushforward _ _ _ _ R _ (measurable_tuple_of_pair n) _
        \o (pair_of_tuple n)) x).
     by apply: eq_integral => x _ /=; rewrite tuple_of_pairK.
   rewrite le_eqVlt; apply/orP; left; apply/eqP.
-  rewrite -[RHS](@integral_pushforward _ _ _ _ R _ (measurable_pair_of_tuple n
-    setT)
+  rewrite -[RHS](@integral_pushforward _ _ _ _ R _ (measurable_pair_of_tuple n setT)
      _ setT (fun x => (abse \o (EFin \o (f \o (tuple_of_pair n)))) x))//.
   + apply/measurable_EFinP => //=; apply: measurableT_comp => //=.
     by apply: measurableT_comp => //=; [exact/measurable_EFinP|
@@ -427,8 +395,7 @@ rewrite -(@integral_pushforward _ _ _ _ R _ (measurable_tuple_of_pair n) _
   by move=> _ A mA _ /=; rewrite image_pair_of_tuple.
 Qed.
 
-Lemma integral_power_measure_tnth (P : probability T R) n (f : {mfun T >-> R}) i
-  :
+Lemma integral_power_measure_tnth (P : probability T R) n (f : {mfun T >-> R}) i :
   \int[\X_n P]_x `|f (tnth x i)|%:E = \int[P]_x (`|f x|)%:E.
 Proof.
 rewrite -(preimage_setT ((@tnth n _)^~ i)).
@@ -473,14 +440,12 @@ move: i => [] [i0|i im].
   rewrite [LHS](@integral_power_measureS _ _ _ _ m).
     exact/Lfun1_integrable/tnth_Lfun/lfunFi/mem_tnth.
   under eq_fun => x do
-    rewrite /Tnth (_ : tnth (_ :: _) _ = tnth [tuple of x.1 :: x.2] ord0)//
-      tnth0.
+    rewrite /Tnth (_ : tnth (_ :: _) _ = tnth [tuple of x.1 :: x.2] ord0)// tnth0.
   rewrite -integral12_prod_meas2 /fubini_F/=.
     apply/integrable12ltyP => /=.
       by apply: measurableT_comp => //=; exact: measurableT_comp.
     under eq_integral => x _ do rewrite integral_cst//= probability_setT mule1.
-    have /lfunFi : tnth F (Ordinal i0) \in F by apply/tnthP; exists (Ordinal
-      i0).
+    have /lfunFi : tnth F (Ordinal i0) \in F by apply/tnthP; exists (Ordinal i0).
     by case/Lfun1_integrable/integrableP.
   by apply: eq_integral => x _; rewrite integral_cst//= probability_setT mule1.
 rewrite [LHS](@integral_power_measureS _ _ _ _ m).
@@ -521,8 +486,7 @@ Lemma expectation_power_measure_sum n (X : n.-tuple {RV P >-> R}) :
   'E_(\X_n P)[\sum_(i < n) Tnth X i] = \sum_(i < n) 'E_P[(tnth X i)].
 Proof.
 move=>/= bX.
-rewrite (_ : \sum_(i < n) Tnth X i = \sum_(Xi <- [seq Tnth X i | i in 'I_n])
-  Xi)%R.
+rewrite (_ : \sum_(i < n) Tnth X i = \sum_(Xi <- [seq Tnth X i | i in 'I_n]) Xi)%R.
   by rewrite big_map big_enum.
 rewrite expectation_sum/=; last first.
   rewrite big_map big_enum/=.
@@ -577,8 +541,7 @@ rewrite /fubini_F/=.
 under eq_integral => x _.
   under eq_integral => y _ do rewrite EFinM.
   rewrite integralZl//; first exact/Lfun1_integrable.
-  rewrite -[X in _ * X]fineK ?integrable_fin_num//; first
-    exact/Lfun1_integrable.
+  rewrite -[X in _ * X]fineK ?integrable_fin_num//; first exact/Lfun1_integrable.
   over.
 rewrite /=integralZr//; first exact/Lfun1_integrable.
 rewrite fineK// integrable_fin_num//.
@@ -632,7 +595,7 @@ rewrite [LHS](@integral_power_measureS _ _ _ _ _ MF).
   pose build_MTP := isMeasurableFun.Build _ _ _ _ tuple_prod meas_tuple_prod.
   pose MTP : {mfun _ >-> _} := HB.pack tuple_prod build_MTP.
   pose normMTP : {mfun _ >-> _} := normr \o MTP.
-  rewrite [ltLHS](_ : _ = \int[P]_w `|thead X w|%:E
+  rewrite [ltLHS](_ : _ = (\int[P]_w `|thead X w|%:E)
     * \int[\X_n P]_w `|tuple_prod w|%:E).
     have := @expectation_prod_meas2 _ _ _ _ _ P (\X_n P) (normr \o thead X)
       (normMTP).
@@ -648,8 +611,7 @@ under eq_fun.
   under eq_bigr do rewrite tnthS.
   over.
 have /Lfun1_integrable/integrableP[mXi iXi] := LfunX _ (mem_tnth ord0 X).
-have ? : \int[\X_n P]_x0 (\prod_(i < n) tnth X (lift ord0 i) (tnth x0 i))%:E <
-  +oo.
+have ? : \int[\X_n P]_x0 (\prod_(i < n) tnth X (lift ord0 i) (tnth x0 i))%:E < +oo.
   under eq_integral => x _.
     rewrite [X in X%:E](_ : _ =
         \prod_(i < n) tnth (behead_tuple X) i (tnth x i))%R.
@@ -666,8 +628,7 @@ have ? : measurable_fun [set: n.-tuple T]
     (fun x => \prod_(i < n) tnth X (lift ord0 i) (tnth x i))%R.
   apply: measurable_prod => //= i _.
   by apply: measurableT_comp => //; exact: measurable_tnth.
-have ? : \int[\X_n P]_x `|\prod_(i < n) tnth X (lift ord0 i) (tnth x i)|%:E <
-  +oo.
+have ? : \int[\X_n P]_x `|\prod_(i < n) tnth X (lift ord0 i) (tnth x i)|%:E < +oo.
   move: h2 => /Lfun1_integrable/integrableP[?].
   apply: le_lt_trans.
   rewrite le_eqVlt; apply/orP; left; apply/eqP.
@@ -720,11 +681,10 @@ Qed.
 End properties_of_independence.
 
 HB.mixin Record RV_isBernoulli d (T : measurableType d) (R : realType)
-  (P : probability T R) (p : R) (X : T -> bool) of @isMeasurableFun d _ T bool X
-    := {
+  (P : probability T R) (p : R) (X : T -> bool) of @isMeasurableFun d _ T bool X := {
     bernoulliP : distribution P X = bernoulli_prob p }.
 
-#[short(type = bernoulliRV)]
+#[short(type=bernoulliRV)]
 HB.structure Definition BernoulliRV d (T : measurableType d) (R : realType)
     (P : probability T R) (p : R) :=
   {X of @RV_isBernoulli _ _ _ P p X & }.
@@ -753,8 +713,7 @@ Qed.
 Lemma bernoulli_RV2 (X : bernoulliRV P p) : P [set i | X i = 0%R] = p.~%:E.
 Proof.
 have/(congr1 (fun f => f [set 0%:R])):= @bernoulliP _ _ _ _ _ X.
-rewrite bernoulli_probE// diracE/= memNset// mule0// diracE/= mem_set// add0e
-  mule1.
+rewrite bernoulli_probE// diracE/= memNset// mule0// diracE/= mem_set// add0e mule1.
 by rewrite /distribution /= => <-.
 Qed.
 
@@ -773,41 +732,11 @@ Qed.
 
 Import MeasurableR.
 
-Lemma integrable_bernoulli (X : bernoulliRV P p) :
-  P.-integrable [set: T] (EFin \o bool_to_real R X).
-Proof.
-apply/integrableP; split.
-  by apply: measurableT_comp => //; exact: measurable_bool_to_real.
-have -> : \int[P]_x `|(EFin \o bool_to_real R X) x| = 'E_P[bool_to_real R X].
-  rewrite unlock /expectation.
-  apply: eq_integral => x _.
-  by rewrite gee0_abs //= lee_fin.
-by rewrite bernoulli_expectation// ltry.
-Qed.
-
 Lemma Lfun_bernoulli (X : bernoulliRV P p) q :
   1 <= q -> (bool_to_real R X : T -> R) \in Lfun P q.
 Proof.
 move=> q1; apply: (@Lfun_bounded _ _ _ P) => //.
 exact: bounded_fun_bool_to_real.
-Qed.
-
-Lemma bool_RV_sqr (X : {RV P >-> bool}) :
-  ((bool_to_real R X ^+ 2) = bool_to_real R X :> (T -> R))%R.
-Proof.
-apply: funext => x /=.
-rewrite /GRing.exp /bool_to_real /GRing.mul/=.
-by case: (X x) => /=; rewrite ?mulr1 ?mulr0.
-Qed.
-
-Lemma bernoulli_variance (X : bernoulliRV P p) :
-  'V_P[bool_to_real R X] = (p * p.~)%:E.
-Proof.
-rewrite (@varianceE _ _ _ _ (bool_to_real R X));
-  [rewrite ?[X in _ \o X]bool_RV_sqr; apply: Lfun_bernoulli..|].
-  by rewrite lee1n.
-rewrite [X in 'E_P[X]]bool_RV_sqr !bernoulli_expectation//.
-by rewrite expe2 -EFinD onemMr.
 Qed.
 
 Definition real_of_bool n : _ -> n.-tuple _ :=
@@ -818,12 +747,6 @@ Definition trial_value n (X : n.-tuple {RV P >-> _})
   (\sum_(i < n) Tnth X i)%R.
 
 Definition bool_trial_value n := @trial_value n \o @real_of_bool n.
-
-Lemma btr_ge0 (X : {RV P >-> bool}) t : (0 <= bool_to_real R X t)%R.
-Proof. by []. Qed.
-
-Lemma btr_le1 (X : {RV P >-> bool}) t : (bool_to_real R X t <= 1)%R.
-Proof. by rewrite /bool_to_real/=; case: (X t). Qed.
 
 Lemma expectation_bernoulli_trial n (X : n.-tuple (bernoulliRV P p)) :
   'E_(\X_n P)[bool_trial_value X] = (n%:R * p)%:E.
@@ -876,8 +799,7 @@ have mB : measurable B by exact: measurable_funPTI.
 have dAB : [disjoint A & B].
   by apply/disj_setPRL; rewrite /A /B preimage_true preimage_false.
 have TAB : setT = A `|` B by rewrite -preimage_setU -setT_bool preimage_setT.
-rewrite unlock TAB integral_setU//; first by rewrite -TAB;
-  exact/measurable_EFinP.
+rewrite unlock TAB integral_setU//; first by rewrite -TAB; exact/measurable_EFinP.
 under eq_integral.
   move=> x /=.
   rewrite /A inE/= /bool_to_real /= => ->.
@@ -919,8 +841,7 @@ Qed.
 
 End properties_of_BernoulliRV.
 
-(* the lemmas used in the sampling theorem that are generic w.r.t. R : realType
-  *)
+(* the lemmas used in the sampling theorem that are generic w.r.t. R : realType *)
 Section sampling_theorem_part1.
 Local Open Scope ereal_scope.
 Context {d} {T : measurableType d} {R : realType} (P : probability T R).
@@ -1015,23 +936,6 @@ rewrite -/(f x) -f1E; apply: (@gtr0_derive1_lt_oc _ f 0 1).
 - exact: x1.
 Qed.
 
-Let sqrxB2xlnx_gt1 (c x : R) : 1 < x -> 1 < x ^+ 2 - 2 * x * ln x.
-Proof.
-move=> x1.
-have x0 := lt_trans ltr01 x1.
-rewrite -/(f x) -f1E; apply: (@gtr0_derive1_lt_cc _ f 1 x).
-- move=> t /[!in_itv] /= /andP[t1 _].
-  by have /idf[? /@ex_derive] := lt_trans ltr01 t1.
-- move=> t /[!in_itv] /= /andP[t1 tx].
-  have t0 := lt_trans ltr01 t1.
-  by rewrite derive1E Df_gt0// gt_eqF.
-- apply: derivable_within_continuous => t /[!in_itv] /= /andP[t1 _].
-  by have /idf[? /@ex_derive] := lt_le_trans ltr01 t1.
-- by rewrite in_itv/= lexx/= ltW.
-- by rewrite in_itv /= lexx andbT ltW.
-- exact: x1.
-Qed.
-
 Lemma xlnx_lbound_i01 (c x : R) :
   c <= 2 -> x \in `]0, 1[ -> x ^+ 2 - 1 < c * x * ln x.
 Proof.
@@ -1040,28 +944,11 @@ have -> : c = c' + 2 by rewrite /c' subrK.
 rewrite -lerBrDr subrr.
 move: c'; clear c => c.
 rewrite ltrBlDr -ltrBlDl.
-rewrite le_eqVlt=> /orP [/eqP-> |]; first by rewrite add0r; exact:
-  sqrxB2xlnx_lt1.
+rewrite le_eqVlt=> /orP [/eqP-> |]; first by rewrite add0r; exact: sqrxB2xlnx_lt1.
 move=> c0 /[dup] x01 /[!in_itv] /andP[x0 x1].
 rewrite -mulrA (addrC c) mulrDl !mulrA opprD addrA.
 rewrite -[ltRHS]addr0 ltrD// ?sqrxB2xlnx_lt1// oppr_lt0.
 by rewrite -mulrA nmulr_lgt0// nmulr_llt0// ln_lt0.
-Qed.
-
-Lemma xlnx_ubound_i1y (c x : R) :
-  c <= 2 -> 1 < x -> c * x * ln x < x ^+ 2 - 1.
-Proof.
-pose c' := c - 2.
-have-> : c = c' + 2 by rewrite /c' addrAC -addrA subrr addr0.
-rewrite -lerBrDr subrr.
-move: c'; clear c => c.
-rewrite ltrBrDr -ltrBrDl.
-rewrite le_eqVlt=> /orP [/eqP-> |]; first by rewrite add0r; exact:
-  sqrxB2xlnx_gt1.
-move=> c0 x1.
-rewrite -mulrA (addrC c) mulrDl !mulrA opprD addrA.
-rewrite -[ltLHS]addr0 ltrD// ?sqrxB2xlnx_gt1// oppr_gt0.
-by rewrite nmulr_rlt0 ?ln_gt0// nmulr_rlt0 ?(lt_trans _ x1).
 Qed.
 
 End xlnx_bounding.
@@ -1118,10 +1005,8 @@ apply: (@le_trans _ _
     rewrite addrCA -{2}(mulr1 p) -mulrBr addrAC subrr sub0r mulrC mulNr.
     exact: expR_ge1Dx.
   rewrite !lnK ?posrE ?subr_gt0//.
-  rewrite -addrAC subrr sub0r -mulrA [X in (_ / X)%R]expRM lnK ?posrE
-    ?subr_gt0//.
-  rewrite -[in leRHS]powR_inv1 ?powR_ge0// powRM// ?expR_ge0 ?invr_ge0
-    ?powR_ge0//.
+  rewrite -addrAC subrr sub0r -mulrA [X in (_ / X)%R]expRM lnK ?posrE ?subr_gt0//.
+  rewrite -[in leRHS]powR_inv1 ?powR_ge0// powRM// ?expR_ge0 ?invr_ge0 ?powR_ge0//.
   by rewrite powRAC powR_inv1 ?powR_ge0// powRrM expRM.
 rewrite lee_fin.
 rewrite -mulrN -mulrA [in leRHS]mulrC expRM ge0_ler_powR// ?nnegrE.
@@ -1141,22 +1026,18 @@ Qed.
 
 End sampling_theorem_part1.
 
-(* this is a preliminary for the second part of the proof of the sampling lemma
-  *)
+(* this is a preliminary for the second part of the proof of the sampling lemma *)
 Module with_interval.
 Declare Scope bigQ_scope.
 Import Reals.
 Import Rstruct Rstruct_topology.
-(*Import Interval.Tactic.*)
+Import Interval.Tactic.
 
 Section exp2_le8.
-Let R := Rdefinitions.R.
 Local Open Scope ring_scope.
 
 Lemma exp2_le8 : (exp 2 <= 8)%R.
-Proof.
-by interval.
-Qed.
+Proof. by interval. Qed.
 
 Lemma exp2_le8_conversion : reflect (exp 2 <= 8)%R (expR 2 <= 8 :> R).
 Proof.
@@ -1226,8 +1107,7 @@ Qed.
 
 End xlnx_bounding_with_interval.
 
-(* the rest of the sampling theorem including lemmas relying on the Rocq
-  standard library *)
+(* the rest of the sampling theorem including lemmas relying on the Rocq standard library *)
 Section sampling_theorem_part2.
 Local Open Scope ereal_scope.
 Let R := Rdefinitions.R.
@@ -1257,136 +1137,6 @@ apply: (@le_trans _ _ (expR ((delta - (delta + delta ^+ 2 / 3)) * fine mu))%:E).
   by rewrite lerB// xlnx_lbound_i12.
 rewrite le_eqVlt; apply/orP; left; apply/eqP; congr (expR _)%:E.
 by rewrite opprD addrA subrr add0r mulrC mulrN mulNr mulrA.
-Qed.
-
-Import MeasurableR.
-
-(* [Corollary 2.7, Rajani] / [Corollary 4.7, MU] *)
-Corollary sampling_ineq4 n (X_ : n.-tuple (bernoulliRV P p)) (delta : R) :
-  (0 < delta < 1)%R ->
-  (0 < n)%N ->
-  (0 < p)%R ->
-  let X := bool_trial_value X_ in
-  let mu := 'E_(\X_n P)[X] in
-  (\X_n P) [set i | `|X i - fine mu | >= delta * fine mu]%R <=
-  (expR (- (fine mu * delta ^+ 2) / 3)%R *+ 2)%:E.
-Proof.
-move=> /andP[d0 d1] n0 p0/=.
-set X := bool_trial_value X_.
-set mu := 'E_(\X_n P)[X].
-have mu_gt0 : (0 < fine mu)%R.
-  by rewrite /mu /X expectation_bernoulli_trial// mulr_gt0// ltr0n.
-under eq_set => x.
-  rewrite ler_normr.
-  rewrite lerBrDl opprD opprK -{1}(mul1r (fine mu)) -mulrDl.
-  rewrite -lerBDr -(lerN2 (- _)%R) opprK opprB.
-  rewrite -{2}(mul1r (fine mu)) -mulrBl -!lee_fin.
-  over.
-rewrite /= set_orb measureU; last 4 first.
-- rewrite -[X in measurable X]setTI; apply: measurable_lee => //.
-  exact/measurable_EFinP/measurableT_comp.
-- rewrite -[X in measurable X]setTI; apply: measurable_lee => //.
-  exact/measurable_EFinP/measurableT_comp.
-- rewrite disjoints_subset => /= x deltaX; apply/negP.
-  rewrite -ltNge (lt_le_trans _ deltaX)// lte_fin ltr_pM2r//.
-  by rewrite ltrD2l gt0_cp.
-rewrite mulr2n EFinD leeD//=.
-- by apply: sampling_ineq2; rewrite //d0 d1.
-- have d01 : (0 < delta < 1)%R by rewrite d0.
-  rewrite (le_trans (sampling_ineq3 p01 X_ d01))//.
-  rewrite lee_fin ler_expR !mulNr lerN2.
-  rewrite ler_pM//; last by rewrite lef_pV2 ?posrE ?ler_nat.
-  rewrite mulr_ge0 ?sqr_ge0// fine_ge0//.
-  by rewrite /mu expectation_ge0//= => t; exact: bernoulli_trial_ge0.
-Qed.
-
-(* [Theorem 3.1, Rajani] / [thm 4.7, MU] *)
-Theorem sampling n (X_ : n.-tuple (bernoulliRV P p)) (theta delta : R) :
-  let X x := ((bool_trial_value X_ x) / n%:R)%R in
-  (0 < delta <= 1)%R -> (0 < theta < p)%R ->
-  (3 / theta ^+ 2 * ln (2 / delta) <= n%:R)%R ->
-  (\X_n P) [set i | `| X i - p | <= theta]%R >= 1 - delta%:E.
-Proof.
-move=> X /andP[delta0 delta1] /andP[theta0 thetap] tdn.
-have /andP[_ p1] := p01.
-set epsilon := (theta / p)%R.
-have p0 : (0 < p)%R by rewrite (lt_trans _ thetap).
-have n0 : (0 < n)%N.
-  rewrite -(@ltr_nat R) (lt_le_trans _ tdn)// mulr_gt0//.
-    by rewrite divr_gt0// exprn_gt0.
-  by rewrite ln_gt0// ltr_pdivlMr ?mul1r// (le_lt_trans delta1)// ltr1n.
-have epsilon01 : (0 < epsilon < 1)%R.
-  by rewrite /epsilon ?ltr_pdivrMr ?divr_gt0 ?mul1r.
-have thetaE : theta = (epsilon * p)%R.
-  by rewrite /epsilon -mulrA mulVf ?mulr1// gt_eqF.
-have step1 : (\X_n P) [set i | `| X i - p | >= epsilon * p]%R <=
-    ((expR (- (p * n%:R * (epsilon ^+ 2)) / 3)) *+ 2)%:E.
-  rewrite [X in (\X_n P) X <= _](_ : _ =
-      [set i | `| bool_trial_value X_ i - p * n%:R |
-        >= epsilon * p * n%:R]%R).
-    apply/seteqP; split => [t|t]/=.
-      move/(@ler_wpM2r _ n%:R (ler0n _ _))=> /le_trans; apply.
-      rewrite -[X in (_ * X)%R](@ger0_norm _ n%:R)// -normrM mulrBl.
-      by rewrite -mulrA mulVf ?mulr1// ?gt_eqF ?ltr0n.
-    move/(@ler_wpM2r _ n%:R^-1); rewrite invr_ge0// ler0n=> /(_ erefl).
-    rewrite -(mulrA _ _ n%:R^-1)%R divff ?mulr1 ?gt_eqF ?ltr0n//.
-    move=> /le_trans; apply.
-    rewrite -[X in (_ * X)%R](@ger0_norm _ n%:R^-1)// -normrM mulrBl.
-    by rewrite -mulrA divff ?mulr1// gt_eqF// ltr0n.
-  rewrite -mulrA.
-  have -> : (p * n%:R)%R = fine (p * n%:R)%:E by [].
-  rewrite -(mulrC _ p) -(expectation_bernoulli_trial p01 X_).
-  exact: (@sampling_ineq4 _ X_ epsilon).
-have step2 : (\X_n P) [set i | `| X i - p | >= theta]%R <=
-    ((expR (- (n%:R * theta ^+ 2) / 3)) *+ 2)%:E.
-  rewrite thetaE; move/le_trans : step1; apply.
-  rewrite lee_fin ler_wMn2r// ler_expR mulNr lerNl mulNr opprK.
-  rewrite -2![in leRHS]mulrA [in leRHS]mulrCA.
-  rewrite /epsilon -mulrA divrK ?unitf_gt0//.
-  apply: (ler_wpM2l (ler0n _ _)).
-  rewrite [in leRHS]mulrA.
-  rewrite ler_pdivrMr ?ltr0n//.
-  rewrite -mulrA mulVf ?gt_eqF//.
-  rewrite thetaE [in leRHS]mulr1.
-  have epsK : ((epsilon * p) / p)%R = epsilon.
-    by rewrite -mulrA mulfV ?gt_eqF// mulr1.
-  rewrite [in leRHS]epsK.
-  rewrite exprMn_comm; first by rewrite /GRing.comm mulrC.
-  rewrite [in leRHS]mulrC.
-  apply: (ler_wpM2l (sqr_ge0 epsilon)).
-  rewrite expr2.
-  have p2_le_p := ler_wpM2l (ltW p0) p1.
-  rewrite mulr1 in p2_le_p.
-  exact: p2_le_p.
-suff : delta%:E >= (\X_n P) [set i | (`|X i - p| >= theta)%R].
-  rewrite [X in (\X_n P) X <= _ -> _](_ : _ =
-      ~` [set i | (`|X i - p| < theta)%R]).
-    apply/seteqP; split => [t|t]/=.
-      by rewrite leNgt => /negP.
-    by rewrite ltNge => /negP/negPn.
-  have ? : measurable [set i | (`|X i - p| < theta)%R].
-    under eq_set => x do rewrite -lte_fin.
-    rewrite -(@setIidr _ setT [set _ | _]) ?subsetT /X//.
-    by apply: measurable_lte => //; apply: measurableT_comp => //;
-      apply: measurableT_comp => //; apply: measurable_funD => //;
-      apply: measurable_funM.
-  rewrite probability_setC// lee_subel_addr//.
-  rewrite -lee_subel_addl//; first by rewrite fin_num_measure.
-  move=> /le_trans; apply.
-  rewrite le_measure ?inE//.
-    under eq_set => x do rewrite -lee_fin.
-    rewrite -(@setIidr _ setT [set _ | _]) ?subsetT /X//.
-    by apply: measurable_lee => //; apply: measurableT_comp => //;
-      apply: measurableT_comp => //; apply: measurable_funD => //;
-      apply: measurable_funM.
-  by move=> t/= /ltW.
-apply: (le_trans step2).
-rewrite lee_fin -(mulr_natr _ 2) -ler_pdivlMr//.
-rewrite -(@lnK _ (delta / 2)%R); first by rewrite posrE divr_gt0.
-rewrite ler_expR mulNr lerNl -lnV; first by rewrite posrE divr_gt0.
-rewrite invf_div ler_pdivlMr// mulrC.
-rewrite -ler_pdivrMr; first by rewrite exprn_gt0.
-by rewrite mulrAC.
 Qed.
 
 End sampling_theorem_part2.

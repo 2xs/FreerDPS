@@ -6,7 +6,7 @@ Follow the instructions on https://github.com/coq-community/templates to regener
 
 [![Docker CI][docker-action-shield]][docker-action-link]
 
-[docker-action-shield]: https://github.com/FreerDPS/FreerDPS/actions/workflows/docker-action.yml/badge.svg?branch=master
+[docker-action-shield]: https://github.com/FreerDPS/FreerDPS/actions/workflows/docker-action.yml/badge.svg?branch=main
 [docker-action-link]: https://github.com/FreerDPS/FreerDPS/actions/workflows/docker-action.yml
 
 
@@ -24,7 +24,10 @@ This work has been accepted for presentation to [COMPAS26](https://2026.compas-c
 - Additional dependencies:
   - [MathComp](https://math-comp.github.io)
   - [MathComp Analysis](https://github.com/math-comp/analysis)
+  - [Infotheo](https://github.com/affeldt-aist/infotheo)
   - Monae
+  - [MathComp Analysis Stdlib compatibility](https://github.com/math-comp/analysis)
+  - [Coq record update](https://github.com/tchajed/coq-record-update)
 - Related publication(s):
   - []() 
 
