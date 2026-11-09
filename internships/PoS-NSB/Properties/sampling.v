@@ -9,8 +9,8 @@ From HB Require Import structures.
 From mathcomp Require Import exp numfun lebesgue_measure lebesgue_integral.
 From mathcomp Require Import reals ereal topology normedtype.
 From mathcomp Require Import sequences realfun convex real_interval.
-From mathcomp Require Import derive esum measure exp numfun lebesgue_measure.
-From mathcomp Require Import lebesgue_integral kernel probability.
+From mathcomp Require Import derive esum measure.
+From mathcomp Require Import kernel probability.
 From mathcomp Require Import hoelder measurable_realfun.
 
 Set Implicit Arguments.
@@ -195,7 +195,7 @@ Lemma trivIset_pair_of_tuple n (F : nat -> set (n.+1.-tuple T)) :
   trivIset [set: nat] (fun m => @pair_of_tuple n @` F m).
 Proof.
 move=> tF; apply/trivIsetP => i j _ _ ij.
-move/trivIsetP : tF => /(_ i j Logic.I Logic.I ij).
+move/trivIsetP : tF=> /(_ i j Logic.I Logic.I ij).
 rewrite -!subset0 => ij0 /= [_ _] [[t Fit] [<- <-]]/=.
 move=> [u Fju [hut tut]].
 have := ij0 t; apply; split => //.
@@ -266,7 +266,7 @@ split.
   under eq_fun => x do rewrite ysection0 measure0 (_ : 0 = cst 0 x)//.
   by rewrite (_ : @power_measure n = pow_meas)// integral_cst// mul0e.
 split.
-  by move => A; rewrite (_ : @power_measure n = pow_meas).
+  by move=> A; rewrite (_ : @power_measure n = pow_meas).
 rewrite (_ : @power_measure n = pow_meas)// (_ : (P \x^ pow_meas)%E = Ppow_meas)//.
 move=> F mF dF mUF.
 rewrite image_bigcup; apply: measure_semi_sigma_additive.
@@ -465,7 +465,7 @@ rewrite -integral21_prod_meas2 /fubini_G/=.
   have : (tnth F (lift ord0 j) : T -> R) \in Lfun P 1.
     by rewrite lfunFi// mem_tnth.
   rewrite {1}(tuple_eta F) tnthS.
-  by move/tnth_Lfun/Lfun1_integrable/integrableP => [_]/=.
+  by move/tnth_Lfun/Lfun1_integrable/integrableP=> [_]/=.
 transitivity (\int[\X_m P]_x (tnth (behead F) j (tnth x j))%:E).
   apply: eq_integral => /=x _.
   by rewrite integral_cst//= probability_setT mule1.
@@ -577,7 +577,7 @@ have h2 : (\prod_(i < n) Tnth (behead_tuple X) i)%R \in Lfun (\X_n P) 1.
   apply/abse_integralP => //=.
     by apply: measurableT_comp => //; exact: measurable_prod_Tnth.
   have := IH (behead_tuple X).
-  rewrite unlock /= => ->; first by move => x /mem_behead/LfunX.
+  rewrite unlock /= => ->; first by move=> x /mem_behead/LfunX.
   rewrite abse_prod -ge0_fin_numE ?prode_ge0// prode_fin_num// => i _.
   rewrite abse_fin_num integrable_fin_num//.
   exact/Lfun1_integrable/LfunX/mem_behead/mem_tnth.
@@ -671,7 +671,7 @@ rewrite [X in _ * X](_ : _ =
   apply: eq_bigr => i _.
   rewrite tnth_behead; congr (tnth X _ _).
   by apply: val_inj => /=; rewrite /bump/= inordK// ltnS.
-rewrite IH; first by move => x /mem_behead/LfunX.
+rewrite IH; first by move=> x /mem_behead/LfunX.
 rewrite big_ord_recl/=; congr (_ * _).
 apply: eq_bigr => /= i _.
 rewrite unlock /expectation.
@@ -681,7 +681,7 @@ Qed.
 End properties_of_independence.
 
 HB.mixin Record RV_isBernoulli d (T : measurableType d) (R : realType)
-  (P : probability T R) (p : R) (X : T -> bool) of @isMeasurableFun d _ T bool X  := {
+  (P : probability T R) (p : R) (X : T -> bool) of @isMeasurableFun d _ T bool X := {
     bernoulliP : distribution P X = bernoulli_prob p }.
 
 #[short(type=bernoulliRV)]
@@ -1037,7 +1037,7 @@ Section exp2_le8.
 Local Open Scope ring_scope.
 
 Lemma exp2_le8 : (exp 2 <= 8)%R.
-Proof. interval. Qed.
+Proof. by interval. Qed.
 
 Lemma exp2_le8_conversion : reflect (exp 2 <= 8)%R (expR 2 <= 8 :> R).
 Proof.
