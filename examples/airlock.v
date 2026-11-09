@@ -56,12 +56,12 @@ Definition controller {Fx : effect} `{DOORS -< Fx, STORE nat -< Fx}
     | Tick =>
       iget >>= fun cpt =>
       when (15 < cpt)%N $
-        close_door left >>
-        close_door right >>
+        (close_door left >>
+        close_door right) >>
         iput 0%nat
     | PressButton d =>
-      close_door (opposite_door d) >>
-      open_door d >>
+      (close_door (opposite_door d) >>
+      open_door d) >>
       iput 0%nat
     end.
 End DoorsControllerM.

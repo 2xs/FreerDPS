@@ -17,7 +17,7 @@
 
 From HB Require Import structures.
 From mathcomp Require Import boot order algebra interval_inference.
-From mathcomp Require Import boolp functions reals.
+From mathcomp Require Import boolp reals.
 From infotheo Require Import realType_ext.
 From monae Require Import preamble hierarchy proba_lib.
 From FreerDPS Require Import init effect freer.
@@ -138,7 +138,7 @@ End setoid_choiceEqFreerMonad.
 Module ChoiceRelation.
 Section relation.
 Context {R : realType} {Fx : effect}.
-Local Notation M := (freer Fx).
+Local Abbreviation M := (freer Fx).
 
 (** Equivalence and bind congruence close the five choice laws. *)
 Inductive choice_eq : forall [A : UU0], M A -> M A -> Prop :=

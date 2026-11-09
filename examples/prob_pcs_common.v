@@ -1,7 +1,8 @@
 
-From mathcomp Require Import all_ssreflect all_algebra interval_inference.
+From mathcomp Require Import boot order algebra interval_inference.
 From mathcomp Require Import classical_sets boolp reals Rstruct.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype order.
+#[warning="-notation-incompatible-prefix"]
 From mathcomp Require Import all_analysis finmap.
 From infotheo Require Import convex fsdist realType_ext.
 From monae Require Import preamble hierarchy.

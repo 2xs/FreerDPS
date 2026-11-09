@@ -5,6 +5,7 @@
 (* Copyright (C) 2018–2020 ANSSI *)
 
 From HB Require Import structures.
+#[warning="-notation-incompatible-prefix"]
 From mathcomp Require Import boot functions boolp classical_sets reals.
 From infotheo Require Import fsdist realType_ext.
 From monae Require Import hierarchy.

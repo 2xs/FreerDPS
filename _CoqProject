@@ -4,6 +4,7 @@
 -arg -w -arg -projection-no-head-constant
 -arg -w -arg -notation-overridden
 -arg -w -arg -ambiguous-paths
+-arg -w -arg -redundant-canonical-projection
 
 ./theories/init.v
 ./theories/effect.v

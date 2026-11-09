@@ -1,8 +1,7 @@
 
-From mathcomp Require Import all_ssreflect all_algebra interval_inference.
+From mathcomp Require Import boot order algebra interval_inference.
 From mathcomp Require Import classical_sets boolp reals Rstruct.
 From mathcomp Require Import ssreflect ssrfun ssrbool eqtype order.
-From mathcomp Require Import all_analysis.
 From monae Require Import preamble hierarchy.
 From infotheo Require Import convex fsdist realType_ext.
 From FreerDPS Require Import all_freerdps ping_common.
@@ -381,7 +380,7 @@ Context {M : freerMonad ProtoF}.
 Definition ping_protocol : component (M:=M) ping_round ProtoF :=
   fun _ cmd => match cmd with
     | one_round =>
-        send >> S_p >>= fun om => match om with
+        (send >> S_p) >>= fun om => match om with
           | Some Ping => wait >>= fun om =>
             if om is Some Pong then Ret GotPong else Ret LostPong
           | _ => Ret LostPing
