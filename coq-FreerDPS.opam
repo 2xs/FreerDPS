@@ -21,9 +21,10 @@ install: [make "install"]
 depends: [
   "coq" 
   "rocq-mathcomp-ssreflect" {>= "2.6.0"}
-  "rocq-mathcomp-analysis" {>= "1.18.0"}
+  "rocq-mathcomp-analysis" {>= "1.19.0"}
+  "rocq-infotheo" {>= "0.9.9"}
   "rocq-monae" {= "0.9.3" | = "dev"}
-  "rocq-mathcomp-analysis-stdlib" {>= "1.18.0"}
+  "rocq-mathcomp-analysis-stdlib" {>= "1.19.0"}
   "coq-record-update" {= "0.3.6"}
 ]
 
