@@ -1,5 +1,9 @@
+
+From mathcomp Require Import boot order algebra interval_inference.
+From mathcomp Require Import classical_sets boolp reals Rstruct.
+From mathcomp Require Import ssreflect ssrfun ssrbool eqtype order.
 From monae Require Import preamble hierarchy.
-From mathcomp Require Import boot boolp reals Rstruct.
+From infotheo Require Import convex fsdist realType_ext.
 From FreerDPS Require Import all_freerdps ping_common.
 From HB Require Import structures.
 
@@ -9,6 +13,8 @@ Unset Printing Implicit Defensive.
 
 Local Abbreviation R := Rdefinitions.R.
 
+Local Open Scope convex_scope.
+Local Open Scope proba_scope.
 Local Open Scope monae_scope.
 Local Open Scope contract_scope.
 Close Scope nat_scope.
@@ -157,18 +163,22 @@ Definition drop_last (ps : packet) (keep:bool) := match ps with
 | None => None
 | Some _ => if keep then ps else None
 end.
+Locate "<|".
+Local Open Scope proba_scope.
+Local Open Scope reals_ext_scope.
+Local Open Scope ring_scope.
 
-Definition drop_from_serv ns (keep : bool) := match ns with
-| mk_chan srvQ cliQ => {|serverQ:= drop_last srvQ keep; clientQ:= cliQ|}
+Definition drop_from_serv (ns: net_state) (p: {prob R}) := match ns with
+| mk_chan srvQ cliQ => fsdist1 ns <| p |> fsdist1 {|serverQ:= None; clientQ:= cliQ|}
 end.
 
-Definition drop_from_cli ns (keep : bool) := match ns  with
-| mk_chan srvQ cliQ => {|serverQ:= srvQ; clientQ:= drop_last cliQ keep|}
+Definition drop_from_cli ns (p: {prob R}) := match ns  with
+| mk_chan srvQ cliQ => fsdist1 ns <| p |> fsdist1 {|serverQ:= srvQ; clientQ:= None |}
 end.
 
-Definition drop_new_packet ns (keep: bool) (q: bool) :=
-if q then drop_from_serv ns keep
-else drop_from_cli ns keep.
+Definition drop_new_packet ns (p: {prob R}) (queue: bool) :=
+if queue then drop_from_serv ns p
+else drop_from_cli ns p.
 
 End NetworkChannelMod.
 
@@ -201,59 +211,59 @@ Definition client_promise ns :
     end.
 
 Definition client_c : contract R client_api net_state :=
-  make_det_contract R c_step client_req client_promise.
+  make_det_contract c_step client_req client_promise.
 
 
 Section client_respectful_and_run_lemmas.
 Context {Fx : effect} `{client_api -< Fx} {M : freerMonad Fx}.
 
 Fact send_respect ns :
-  pre (client_c |~ (send : M _)) ns.
-Proof. by rewrite to_hoare_triggerE /= provided_callerP. Qed.
+  pre (client_c |~ (send : M _)) (fsdist1 ns).
+Proof. by rewrite pre_trigger1P. Qed.
 
-Fact send_run (ins fns : net_state) (u:unit) (run : post (client_c |~ (send : M _)) ins u fns ) :
-  fns.(clientQ) = ins.(clientQ)
-  /\ fns.(serverQ) = serverQ (fill_serverQ Ping ins).
+Fact send_run (ins : net_state) (fns : R.-dist net_state) (u : unit)
+    (run : post (client_c |~ (send : M _)) (fsdist1 ins) u fns) :
+  exists t, fns = fsdist1 t /\
+    t.(clientQ) = ins.(clientQ) /\
+    t.(serverQ) = serverQ (fill_serverQ Ping ins).
 Proof.
-move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
-by case=> /fsdist.fsdist1_inj ->.
+move: run; rewrite post_trigger1P /=.
+by case=> -> _; exists (fill_serverQ Ping ins).
 Qed.
 
-Fact wait_respect n (coh : clientQ n != Some Ping) : pre (client_c |~ (wait : M _)) n.
-Proof.
-Proof. by rewrite to_hoare_triggerE /= provided_callerP /=. Qed.
+Fact wait_respect n (coh : clientQ n != Some Ping) :
+  pre (client_c |~ (wait : M _)) (fsdist1 n).
+Proof. by rewrite pre_trigger1P /=. Qed.
 
-Fact wait_run (ins fns : net_state) p (run : post (client_c |~ (wait : M _)) ins p fns ) :
-  fns.(clientQ) = None /\ fns.(serverQ) = ins.(serverQ).
+Fact wait_run (ins : net_state) (fns : R.-dist net_state) p
+    (run : post (client_c |~ (wait : M _)) (fsdist1 ins) p fns) :
+  exists t, fns = fsdist1 t /\
+    t.(clientQ) = None /\ t.(serverQ) = ins.(serverQ).
 Proof.
-move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
-case=> /fsdist.fsdist1_inj ->.
+move: run; rewrite post_trigger1P /=.
+case=> -> _; exists (consume_clientQ ins); split=> //.
 by case: ins=> sQ; case.
 Qed.
 
 Lemma c_respect ns
     (coh : clientQ ns != Some Ping) :
-  pre (client_c |~ (C : M _)) ns.
+  pre (client_c |~ (C : M _)) (fsdist1 ns).
 Proof.
 rewrite freer_to_hoare_bindE; split.
 - exact: send_respect.
-move=> [] [sQ cQ] /send_run=> /= -[] -> -> /=.
+move=> [] d /send_run [[sQ cQ] [-> /= [-> ->]]].
 exact/wait_respect/coh.
 Qed.
 
 Lemma c_run
-    (ins fns : net_state) (p : option msg)
-    (run : post (client_c |~ (C : M _)) ins p fns) :
-  fns.(clientQ) = None /\ fns.(serverQ) = serverQ (fill_serverQ Ping ins).
+    (ins : net_state) (fns : R.-dist net_state) (p : option msg)
+    (run : post (client_c |~ (C : M _)) (fsdist1 ins) p fns) :
+  exists t, fns = fsdist1 t /\
+    t.(clientQ) = None /\ t.(serverQ) = serverQ (fill_serverQ Ping ins).
 Proof.
-move: run.
-rewrite freer_to_hoare_bindE.
-case=> [[]] [[sQ cQ]] [].
-move/send_run.
-case=>/= Hc Hs.
-rewrite Hc.
-rewrite Hs.
-by move/wait_run.
+move: run; rewrite freer_to_hoare_bindE.
+case=> [[]] [d] [] /send_run [[sQ cQ] [-> /= [-> ->]]].
+by move/wait_run=> [t [-> wait_t]]; exists t.
 Qed.
 
 End client_respectful_and_run_lemmas.
@@ -285,45 +295,47 @@ match cmd with
 end.
 
 Definition server_c : contract R server_api net_state :=
-  make_det_contract R server_step server_req server_promise.
+  make_det_contract server_step server_req server_promise.
 
 Section server_respectful_and_run_lemmas.
 Context {Fx : effect} `{server_api -< Fx} {M : freerMonad Fx}.
 
 Fact reply_respect ns :
-  pre (server_c |~ (reply : M _)) ns.
-Proof. by rewrite to_hoare_triggerE /= provided_callerP. Qed.
+  pre (server_c |~ (reply : M _)) (fsdist1 ns).
+Proof. by rewrite pre_trigger1P. Qed.
 
-Fact reply_run (ins fns : net_state) (u : unit)
-    (run : post (server_c |~ (reply : M _)) ins u fns) :
-  fns.(clientQ) = clientQ (fill_clientQ Pong ins) /\
-  fns.(serverQ) = ins.(serverQ).
+Fact reply_run (ins : net_state) (fns : R.-dist net_state) (u : unit)
+    (run : post (server_c |~ (reply : M _)) (fsdist1 ins) u fns) :
+  exists t, fns = fsdist1 t /\
+    t.(clientQ) = clientQ (fill_clientQ Pong ins) /\
+    t.(serverQ) = ins.(serverQ).
 Proof.
-move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
-by case=> /fsdist.fsdist1_inj ->.
+move: run; rewrite post_trigger1P /=.
+by case=> -> _; exists (fill_clientQ Pong ins).
 Qed.
 
 Fact recv_respect n (coh : serverQ n != Some Pong) :
  (* = Some Ping \/ serverQ n = None) : *)
-  pre (server_c |~ (recv : M _)) n.
-Proof. by rewrite to_hoare_triggerE /= provided_callerP /=. Qed.
+  pre (server_c |~ (recv : M _)) (fsdist1 n).
+Proof. by rewrite pre_trigger1P /=. Qed.
 
-Fact recv_run (ins fns : net_state) (p : option msg)
-    (run : post (server_c |~ (recv : M _)) ins p fns) :
-  fns.(clientQ) = ins.(clientQ) /\ fns.(serverQ) = None.
+Fact recv_run (ins : net_state) (fns : R.-dist net_state) (p : option msg)
+    (run : post (server_c |~ (recv : M _)) (fsdist1 ins) p fns) :
+  exists t, fns = fsdist1 t /\
+    t.(clientQ) = ins.(clientQ) /\ t.(serverQ) = None.
 Proof.
-move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
-case=> /fsdist.fsdist1_inj ->.
+move: run; rewrite post_trigger1P /=.
+case=> -> _; exists (consume_serverQ ins); split=> //.
 by case: ins; case.
 Qed.
 
 Lemma s_p_respect ns (coh : serverQ ns != Some Pong) :
  (* !- Ping \/ serverQ ns = None) : *)
-  pre (server_c |~ (S_p : M _)) ns.
-(* Proof. *)
+  pre (server_c |~ (S_p : M _)) (fsdist1 ns).
+Proof.
 rewrite /S_p freer_to_hoare_bindE; split.
   exact/recv_respect/coh.
-move=> [[]|] [sQ cQ] /recv_run=> /= -[] -> -> /=.
+move=> [[]|] d /recv_run [[sQ cQ] [-> /= [-> ->]]] /=.
 - rewrite freer_to_hoare_bindE; split.
     exact: reply_respect.
   move=> *.
@@ -331,18 +343,19 @@ all: by rewrite pre_ret.
 Qed.
 
 Lemma s_p_run
-    (ins fns : net_state) (result : option msg)
-    (run : post (server_c |~ (S_p : M _)) ins result fns) :
+    (ins : net_state) (fns : R.-dist net_state) (result : option msg)
+    (run : post (server_c |~ (S_p : M _)) (fsdist1 ins) result fns) :
+  exists t, fns = fsdist1 t /\
   match result with
-  | Some Ping => fns.(clientQ) = clientQ (fill_clientQ Pong ins)
-  | _ => fns.(clientQ) = clientQ ins
-  end /\ fns.(serverQ) = None.
+  | Some Ping => t.(clientQ) = clientQ (fill_clientQ Pong ins)
+  | _ => t.(clientQ) = clientQ ins
+  end /\ t.(serverQ) = None.
 Proof.
 move: run; rewrite freer_to_hoare_bindE.
-case=>[[[]|]] [[s1 c1]] [] /recv_run /= [] -> ->.
+case=> [[[]|]] [d1] [] /recv_run [[s1 c1] [-> /= [-> ->]]].
 - rewrite freer_to_hoare_bindE.
-  case=>[[]] [[s2 c2]] [] /reply_run /= [] -> ->.
-all: by rewrite post_ret; case=> <- <-.
+  case=> [[]] [d2] [] /reply_run [[s2 c2] [-> /= [-> ->]]].
+all: by rewrite post_ret; case=> <- <-; eexists.
 Qed.
 
 End server_respectful_and_run_lemmas.
@@ -367,7 +380,7 @@ Context {M : freerMonad ProtoF}.
 Definition ping_protocol : component (M:=M) ping_round ProtoF :=
   fun _ cmd => match cmd with
     | one_round =>
-        send >> S_p >>= fun om => match om with
+        (send >> S_p) >>= fun om => match om with
           | Some Ping => wait >>= fun om =>
             if om is Some Pong then Ret GotPong else Ret LostPong
           | _ => Ret LostPing
@@ -375,49 +388,48 @@ Definition ping_protocol : component (M:=M) ping_round ProtoF :=
     end.
 
 Definition ping_contract : contract R ProtoF net_state := client_c -^- server_c.
-Definition ping_inv (net : net_state) := serverQ net = None /\ clientQ net = None.
-
-Set Printing Implicit.
+Definition ping_inv (net : net_state) :=
+  serverQ net = None /\ clientQ net = None.
 
 Lemma pre_ping (net : net_state) :
-  ping_inv net -> pre (ping_contract |~ ping_protocol one_round) net.
+  ping_inv net -> pre (ping_contract |~ ping_protocol one_round) (fsdist1 net).
 Proof.
 move=>[s0 c0]; rewrite /= bindA.
 rewrite freer_to_hoare_bindE freer_contract_left //=; split.
   exact: send_respect.
-case=> [] [s1 c1] /send_run /=.
-case=> -> ->.
+case=> [] d1 /send_run [[s1 c1] [-> /= [-> ->]]].
 rewrite freer_to_hoare_bindE freer_contract_right //; split.
   exact/s_p_respect/eqP.
-move=> [[]|] [s2 c2] /s_p_run /= => -[] -> ->.
+move=> [[]|] d2 /s_p_run [[s2 c2] [-> /= [-> ->]]].
 + rewrite freer_to_hoare_bindE freer_contract_left //=; split.
     exact/wait_respect/eqP.
-move=> [[]|] [s3 c3] /wait_run => /= -[] -> ->.
+move=> [[]|] d3 /wait_run [[s3 c3] [-> /= [-> ->]]].
 all: by rewrite pre_ret.
 Qed.
 
-Lemma post_ping (n n' : net_state) (result : outcome) :
-  ping_inv n -> post (ping_contract |~ ping_protocol one_round) n result n' ->
-   ping_inv n'.
+Lemma post_ping (n : net_state) (n' : R.-dist net_state) (result : outcome) :
+  ping_inv n ->
+  post (ping_contract |~ ping_protocol one_round) (fsdist1 n) result n' ->
+  dist_inv ping_inv n'.
 Proof.
 move=> [s0 c0]; rewrite /= bindA.
 rewrite freer_to_hoare_bindE.
 rewrite freer_contract_left //;
-  case=>[[]] [[s1 c1]] [].
-move/send_run=> /= [] -> ->.
+  case=>[[]] [d1] [].
+move/send_run=> [[s1 c1] [-> /= [-> ->]]].
 rewrite freer_to_hoare_bindE freer_contract_right //;
-  case=>[[[]|]] [[s2 c2]] [] /= => /s_p_run=> /= -[] -> -> .
+  case=>[[[]|]] [d2] [] /s_p_run [[s2 c2] [-> /= [-> ->]]].
 - rewrite freer_to_hoare_bindE freer_contract_left //;
-    case=>[inc] [[s3 c3]] [].
-  move/wait_run=> /= [] -> ->; case: inc=>[[]|].
-all: by rewrite post_ret=> -[] ? <- //.
+    case=>[inc] [d3] [].
+  move/wait_run=> [[s3 c3] [-> /= [-> ->]]]; case: inc=>[[]|].
+all: by rewrite post_ret=> -[] ? <-; eexists.
 Qed.
 
 Theorem ping_correct :
   correct_component ping_protocol (no_contract R ping_round) ping_contract
-    (fun=> ping_inv).
+    (fun=> dist_inv ping_inv).
 Proof.
-move=>[] n inv ? [] []; split=>[|m n' Hpost] /=.
+move=> ? ? [n [-> inv]] ? [] []; split=> [|m n' Hpost] /=.
   exact: pre_ping.
 by split=>//; move: (post_ping inv Hpost).
 Qed.
@@ -428,7 +440,7 @@ End ProtocolM.
 (** * Probability of Success *)
 
 (******************************************************************************)
-(* TODO: Rewrite the above using FlipEff instead of `ping_round`, normally the *)
+(* TODO: Rewrite the above using FlipEff instead of `ping_round`, normally the*)
 (*       proofs should be quite straightforward (reusing ping_freer_prob.v at *)
 (*       most points).                                                        *)
 (******************************************************************************)
@@ -449,4 +461,3 @@ For at most [n] attempts, with [q = (1 - p)^2]:
 P(n) = 1 - (1 - q)^n.
 >>
 *)
-

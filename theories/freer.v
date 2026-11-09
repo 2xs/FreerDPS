@@ -5,6 +5,7 @@
 (* Copyright (C) 2018–2020 ANSSI *)
 Local Close Scope nat_scope.
 From mathcomp Require Import boot order.
+#[warning="-notation-incompatible-prefix"]
 From mathcomp Require Import boolp functions.
 From monae Require Import hierarchy.
 From FreerDPS Require Import init effect.

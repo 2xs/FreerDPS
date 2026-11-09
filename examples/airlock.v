@@ -10,6 +10,7 @@ From monae Require Import hierarchy.
 From FreerDPS Require Import all_freerdps.
 
 From mathcomp Require Import ssreflect ssrfun reals Rstruct.
+From infotheo Require Import fsdist.
 
 Local Abbreviation R := Rdefinitions.R.
 (* DOORS == TODO *)
@@ -55,12 +56,12 @@ Definition controller {Fx : effect} `{DOORS -< Fx, STORE nat -< Fx}
     | Tick =>
       iget >>= fun cpt =>
       when (15 < cpt)%N $
-        close_door left >>
-        close_door right >>
+        (close_door left >>
+        close_door right) >>
         iput 0%nat
     | PressButton d =>
-      close_door (opposite_door d) >>
-      open_door d >>
+      (close_door (opposite_door d) >>
+      open_door d) >>
       iput 0%nat
     end.
 End DoorsControllerM.
@@ -145,7 +146,7 @@ it is false only when the state of a door that we check is not u
 *)
 
 Definition doors_c : contract R DOORS state :=
-  make_det_contract R
+  make_det_contract
    (fun s U cmd _ => doors_witness_update s U cmd)
    doors_requirement
    doors_promise.
@@ -168,39 +169,37 @@ Section RespectfulAndRunLemmas.
 Context {Fx : effect} `{DOORS -< Fx} {M : freerMonad Fx}.
 
 (** Closing a door [d] in any system [s] is always a respectful operation. *)
-Lemma close_door_respectful d :
-  pre (doors_c |~ (close_door d : M _)) = [set: _].
+Lemma close_door_respectful d (s : state) :
+  pre (doors_c |~ (close_door d : M _)) (fsdist1 s).
 Proof.
-rewrite /close_door -subTset=> s _.
-rewrite freer_to_hoare_bindE/=; split.
-  by rewrite to_hoare_triggerE /= provided_callerP.
-case=> w'; rewrite pre_to_hoare_whenP // !to_hoare_triggerE /=.
-rewrite provided_calleeP provided_callerP /=.
-by case=>/fsdist.fsdist1_inj -> ->.
+rewrite /close_door freer_to_hoare_bindE/=; split.
+  by rewrite pre_trigger1P.
+case=> w'; rewrite pre_to_hoare_whenP // post_trigger1P /=.
+by case=> -> door_open; rewrite pre_trigger1P /= door_open.
 Qed.
 
 Lemma open_door_respectful (s : state) d
     (safe : ~~ door_state (opposite_door d) s) :
-  pre (doors_c |~ (open_door d : M _)) s.
+  pre (doors_c |~ (open_door d : M _)) (fsdist1 s).
 Proof.
 rewrite /open_door freer_to_hoare_bindE; split.
-  by rewrite pre_to_hoare_triggerP.
-case=> w'; rewrite pre_to_hoare_whenP // !to_hoare_triggerE /=.
-rewrite provided_calleeP provided_callerP /=.
-case=> /fsdist.fsdist1_inj -> ->.
+  by rewrite pre_trigger1P.
+case=> w'; rewrite pre_to_hoare_whenP // post_trigger1P /=.
+case=> -> door_closed; rewrite pre_trigger1P /= door_closed.
 by move: safe=> /= /negPf ->.
 Qed.
 
-Lemma close_door_run (s : state) d (s' : state) (x : unit)
-    (run : post (doors_c |~ (close_door d : M _)) s x s') :
-  ~~ door_state d s'.
+Lemma close_door_run (s : state) d (s' : R.-dist state) (x : unit)
+    (run : post (doors_c |~ (close_door d : M _)) (fsdist1 s) x s') :
+  dist_inv (fun t=>~~ door_state d t) s'.
 Proof.
 move: run; rewrite /close_door freer_to_hoare_bindE.
 move=> [opened [w] []].
-rewrite post_to_hoare_whenP post_to_hoare_triggerP=> -[/fsdist.fsdist1_inj ->].
-case: opened=> /= [| /[swap] -> ->] // door_open [[]].
-rewrite post_to_hoare_triggerP=> -[/fsdist.fsdist1_inj -> _].
-by rewrite tog_equ_1 door_open.
+rewrite post_to_hoare_whenP post_trigger1P /= => -[->].
+case: opened=> /= [door_open [[]] | /[swap] -> door_closed]; last first.
+  by exists s; rewrite door_closed.
+rewrite post_trigger1P /= => -[-> _].
+by exists (toggle d s); rewrite tog_equ_1 door_open.
 Qed.
 
 Opaque close_door.
@@ -209,24 +208,29 @@ Opaque Nat.ltb.
 Opaque door_state.
 
 Lemma doors_trigger_preserves_safe
-    {a : Type} (cmd : Fx a) (s : state) (x : a) (s' : state) :
+    {a : Type} (cmd : Fx a) (s : R.-dist state) (x : a)
+    (s' : R.-dist state) :
   pre (doors_c |~ (ptrigger cmd : M _)) s ->
   post (doors_c |~ (ptrigger cmd : M _)) s x s' ->
-  not_both_open s -> not_both_open s'.
+  dist_inv not_both_open s -> dist_inv not_both_open s'.
 Proof.
+move=> pre_s post_s [t [sE safe]]; move: pre_s post_s; rewrite sE.
 rewrite to_hoare_triggerE /=.
 rewrite /gen_requirement /gen_state_update /gen_promise.
-case: prj=> [door_op |_ [ /fsdist.fsdist1_inj -> _ //]] /=.
-move: door_op x; case=> d /= [] caller [/fsdist.fsdist1_inj -> _] _ //.
-apply: (one_door_safe_all_doors_safe (toggle d s) d).
+case: prj=> [door_op |_ [-> _]]; last by exists t.
+rewrite /= fsdist1bind.
+move: door_op x; case=> d /= []; rewrite fsdistmap1;
+  move=> /fsdist1_inj/asboolP caller [-> _]; try by exists t.
+all: rewrite fsdist1bind /= dist_inv1P //.
+apply: (one_door_safe_all_doors_safe (toggle d t) d).
 move: caller.
 rewrite tog_equ_1 tog_equ_2 negbK.
-case: (door_state (opposite_door _)) => /=; rewrite ?orbF ?orbT//.
-exact.
+by case: (door_state d t); case: (door_state (opposite_door d) t)
+  => //= /(_ isT).
 Qed.
 
 Lemma doors_handler_preserves_safe {a : Type} (cmd : Fx a) :
-  preserves_invariant not_both_open (hoare_of_contract doors_c cmd).
+  preserves_invariant (dist_inv not_both_open) (hoare_of_contract doors_c cmd).
 Proof.
 move=> witness result witness' hpre hpost.
 apply: doors_trigger_preserves_safe;
@@ -246,18 +250,18 @@ Context {Fx : effect} `{DOORS -< Fx} {M : inductiveFreerMonad Fx}.
   * if the invariant was preserved all along.
   *)
 Lemma doors_run_preserves_safe {A : Type} (p : M A) :
-  preserves_invariant not_both_open (doors_c |~ p).
+  preserves_invariant (dist_inv not_both_open) (doors_c |~ p).
 Proof.
 by apply: to_hoare_preserves_invariant=> *;
   exact: (doors_handler_preserves_safe (M := M)).
 Qed.
 
 Lemma respectful_run_inv {A : Type} (p : M A)
-    (s : state) (safe : not_both_open s)
-    (a : A) (s' : state)
+    (s : R.-dist state) (safe : dist_inv not_both_open s)
+    (a : A) (s' : R.-dist state)
     (hpre : pre (doors_c |~ p) s)
     (hpost : post (doors_c |~ p) s a s') :
-  not_both_open s'.
+  dist_inv not_both_open s'.
 Proof. by move: hpre hpost safe; exact: doors_run_preserves_safe. Qed.
 End InvariantRunLemmas.
 
@@ -267,37 +271,39 @@ Context {Fx : effect} `{DOORS ;; (STORE nat) -<< Fx}
   {M : inductiveFreerMonad Fx}.
 
 Lemma controller_pre {A : Type} (cmd : CONTROLLER A) (s : state) :
-  pre (doors_c |~ controller (M := M) A cmd) s.
+  pre (doors_c |~ controller (M := M) A cmd) (fsdist1 s).
 Proof.
 case: cmd => [| d].
 - rewrite freer_to_hoare_bindE; split =>[|cpt w].
   + rewrite to_hoare_triggerE.
     exact: distinguished_caller.
   + rewrite to_hoare_triggerE.
-    move/distinguished_callee=> /fsdist.fsdist1_inj ->.
+    move/distinguished_callee=> <-.
     rewrite pre_to_hoare_whenP.
     case: (15 < cpt)%N => //=.
     rewrite freer_to_hoare_bindE; split => [|*].
-    * by rewrite freer_to_hoare_bindE; split => [|*];
-        rewrite close_door_respectful.
+    * rewrite freer_to_hoare_bindE; split=> [|? ? /close_door_run[t [-> _]]].
+        exact: close_door_respectful.
+      exact: close_door_respectful.
     * rewrite to_hoare_triggerE => x ?.
       by apply: distinguished_caller.
 - rewrite freer_to_hoare_bindE; split => [|*].
-  + rewrite freer_to_hoare_bindE; split => [|? ? close_post].
-    * by rewrite close_door_respectful.
-    * exact/open_door_respectful/close_door_run/close_post.
+  + rewrite freer_to_hoare_bindE; split => [|? ? /close_door_run[t [-> ?]]].
+      exact: close_door_respectful.
+    exact: open_door_respectful.
   + rewrite to_hoare_triggerE => x ?.
     exact: distinguished_caller.
 Qed.
 
 Theorem controller_correct :
   correct_component controller (M := M)
-    (no_contract R CONTROLLER) doors_c (fun=> not_both_open).
+    (no_contract R CONTROLLER) doors_c (fun=> dist_inv not_both_open).
 Proof.
-move=> ? s ? ? cmd _; split=> [| ? ? hpost].
-  exact: controller_pre.
+move=> ? sout safe ? cmd _; split=> [| ? ? hpost].
+  by case: safe=> s [-> _]; exact: controller_pre.
 split=> //.
-have hpre := controller_pre cmd s; move: hpre hpost.
+have [s [sE _]] := safe.
+have hpre := controller_pre cmd s; move: hpre hpost; rewrite -sE.
 exact: respectful_run_inv.
 Qed.
 

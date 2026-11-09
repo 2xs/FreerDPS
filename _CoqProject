@@ -4,6 +4,7 @@
 -arg -w -arg -projection-no-head-constant
 -arg -w -arg -notation-overridden
 -arg -w -arg -ambiguous-paths
+-arg -w -arg -redundant-canonical-projection
 
 ./theories/init.v
 ./theories/effect.v
@@ -22,3 +23,4 @@
 ./examples/ping_client_serv_freespec.v
 ./examples/prob_pcs_common.v
 ./examples/test_provide_transitivity.v
+./examples/test_contractprod.v

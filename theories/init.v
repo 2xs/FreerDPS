@@ -14,6 +14,4 @@ Definition when {X} {M : monad} (b : bool) (m : M X) : M unit :=
   if b then m >> skip else skip.
 Notation "f $ x" := (f x) (at level 60, right associativity, only parsing).
 
-Reserved Infix "===" (at level 70, no associativity).
-
 Set Typeclasses Strict Resolution.

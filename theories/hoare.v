@@ -5,7 +5,9 @@
 (* Copyright (C) 2018–2020 ANSSI *)
 
 From HB Require Import structures.
-From mathcomp Require Import boot functions boolp classical_sets.
+#[warning="-notation-incompatible-prefix"]
+From mathcomp Require Import boot functions boolp classical_sets reals.
+From infotheo Require Import fsdist realType_ext.
 From monae Require Import hierarchy.
 From FreerDPS Require Import mathcomp_extra init effect freer contract.
 
@@ -59,8 +61,6 @@ rewrite /bind /ret /hoare_bind /hoare_ret/=; congr mk_hoare.
   under eq2_exists do rewrite andA.
   by rewrite ex2C ex2_eqr ex_eqr.
 Qed.
-
-(* Local Open Scope ssripat_scope. *)
 
 Let left_neutral : BindLaws.left_neutral bind ret.
 Proof.
@@ -152,6 +152,7 @@ apply: k_preserves.
 by move: h_pre h_post Hsafe; exact: h_preserves.
 Qed.
 
+(* TODO: Check if this can be rewritten using denote_unique *)
 Lemma denote_preserves_invariant {Fx : effect} {M : inductiveFreerMonad Fx}
   {S : UU0} (invariant : set S) (handler : Fx ~~> hoare S) (A : UU0) (p : M A) :
   (forall (X : Type) (cmd : Fx X),
@@ -168,21 +169,19 @@ apply: (@denote_ind _ _ _ _  (fun X => preserves_invariant invariant)).
 - exact: H.
 Qed.
 
-From mathcomp Require Import reals.
-From infotheo Require Import fsdist realType_ext.
-
 Section hoare_of_contract.
-Context {R : realType} {Fx F : effect} `{F -<? Fx} (S : choiceType) (c : contract R F S).
+Context {R : realType} {Fx F : effect} `{F -<? Fx} (S : choiceType)
+  (c : contract R F S).
 
 Local Open Scope classical_set_scope.
 
-Definition hoare_of_contract : Fx ~~> hoare S :=
+Definition hoare_of_contract : Fx ~~> hoare (R.-dist S) :=
   fun U cmd => mk_hoare
-    (gen_requirement R c ^~ cmd)
-    (fun s (x : U) s' => fsdist1 s' = gen_state_update R c s cmd x /\
-                         gen_promise R c s cmd x).
+    (gen_requirement c ^~ cmd)
+    (fun s (x : U) s' => s' = gen_state_update c s cmd x /\
+                         gen_promise c s cmd x).
 
-Definition freer_to_hoare {M : freerMonad Fx} : M ~~> hoare S :=
+Definition freer_to_hoare {M : freerMonad Fx} : M ~~> hoare (R.-dist S) :=
   denote _ hoare_of_contract.
 
 End hoare_of_contract.
@@ -199,22 +198,19 @@ Section freer_to_hoare_lemmas.
 Context {R : realType} {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx}
  (S : choiceType) (c : contract R F S).
 
-(* Context {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx} *)
-    (* (S : Type) (c : contract F S). *)
-
 Local Open Scope classical_set_scope.
-Check c.
-Lemma pre_ret {U : Type} (u : U) : pre (c |~ (Ret u : M _)) = [set: S].
+Lemma pre_ret {U : Type} (u : U) :
+  pre (c |~ (Ret u : M _)) = [set: R.-dist S].
 Proof. by rewrite /freer_to_hoare denote_ret. Qed.
 
-Lemma pre_skip : pre (c |~ (skip : M _)) = [set: S].
+Lemma pre_skip : pre (c |~ (skip : M _)) = [set: R.-dist S].
 Proof. by rewrite pre_ret. Qed.
 
-Lemma post_ret {U : Type} (u v : U) (s s' : S) :
+Lemma post_ret {U : Type} (u v : U) (s s' : R.-dist S) :
   post (c |~ (Ret u : M _)) s v s' <-> u = v /\ s = s'.
 Proof. by rewrite /freer_to_hoare denote_ret. Qed.
 
-Lemma post_skip (s s' : S) (x : unit) :
+Lemma post_skip (s s' : R.-dist S) (x : unit) :
   post (c |~ (skip : M _)) s x s' <-> s = s'.
 Proof.
 by rewrite /freer_to_hoare/= post_ret; split=> [[]//|<-]; case: x.
@@ -256,11 +252,11 @@ End BindFacts.
 Section WhenFacts.
 Context {U : Type} (p : M U).
 
-Lemma pre_to_hoare_whenP b (s : S) :
+Lemma pre_to_hoare_whenP b (s : R.-dist S) :
   pre (c |~ when b p) s <-> if b then pre (c |~ p) s else True.
 Proof. by case: b => /=; [rewrite pre_bindmskip|rewrite pre_skip]. Qed.
 
-Lemma post_to_hoare_whenP b (s : S) (x : unit) (s' : S) :
+Lemma post_to_hoare_whenP b (s : R.-dist S) (x : unit) (s' : R.-dist S) :
   post (c |~ when b p) s x s' <->
   if b
   then exists y, post (c |~ p) s y s'
@@ -284,7 +280,7 @@ End GenericToHoareSection.
 
 Lemma to_hoare_preserves_invariant {R : realType} {Fx F : effect} `{F -<? Fx}
   {M : inductiveFreerMonad Fx} {S : choiceType}
-  (invariant : set S) (c : contract R F S)
+  (invariant : set (R.-dist S)) (c : contract R F S)
   (handler_preserves : forall (A : UU0) (cmd : Fx A),
     preserves_invariant invariant (hoare_of_contract c cmd)) (A : UU0) (p : M A) :
   preserves_invariant invariant (c |~ p).
@@ -296,17 +292,43 @@ Section contract_trigger_helpers.
 Context {R : realType} {Fx F : effect} `{F -< Fx} {M : freerMonad Fx}
     (S : choiceType) (c : contract R F S) {A : Type}.
 
-Lemma pre_to_hoare_triggerP (cmd : F A) (s : S) :
+Lemma pre_to_hoare_triggerP (cmd : F A) (s : R.-dist S) :
   pre (c |~ (ptrigger cmd : M _)) s <->
   requirement c s cmd.
 Proof. by rewrite to_hoare_triggerE /= provided_callerP. Qed.
 
-Lemma post_to_hoare_triggerP (cmd : F A) (s : S) (a : A) (s' : S) :
+Lemma post_to_hoare_triggerP (cmd : F A) (s : R.-dist S) (a : A)
+    (s' : R.-dist S) :
   post (c |~ (ptrigger cmd : M _)) s a s' <->
-  fsdist1 s' = state_update c s cmd a /\ promise c s cmd a.
+  s' = fsdistbind s (fun ss=> state_update c ss cmd a) /\ promise c s cmd a.
 Proof. by rewrite to_hoare_triggerE /= provided_calleeP. Qed.
 
 End contract_trigger_helpers.
+
+Section det_contract_trigger_helpers.
+Context {R : realType} {Fx F : effect} `{F -< Fx} {M : freerMonad Fx}
+    {S : choiceType} (su : S -> forall U : Type, F U -> U -> S)
+    (re : S -> forall U : Type, F U -> Prop)
+    (pr : S -> forall U : Type, F U -> U -> Prop) {A : Type}.
+
+Local Abbreviation c := (@make_det_contract R _ _ su re pr).
+
+Lemma pre_trigger1P (cmd : F A) (s : S) :
+  pre (c |~ (ptrigger cmd : M _)) (fsdist1 s) <-> re s cmd.
+Proof.
+rewrite pre_to_hoare_triggerP /= fsdistmap1.
+by split=> [/fsdist1_inj/asboolP // | /asboolT ->].
+Qed.
+
+Lemma post_trigger1P (cmd : F A) (s : S) (a : A) (d' : R.-dist S) :
+  post (c |~ (ptrigger cmd : M _)) (fsdist1 s) a d' <->
+  d' = fsdist1 (su s cmd a) /\ pr s cmd a.
+Proof.
+rewrite post_to_hoare_triggerP /= !fsdist1bind fsdistmap1.
+by split=> [[-> /fsdist1_inj/asboolP] | [-> /asboolT ->]].
+Qed.
+
+End det_contract_trigger_helpers.
 
 (* Frame rule machinery *)
 Module frame_rule.
@@ -418,7 +440,7 @@ rewrite /hoare_of_contract /sharedcontractprod /gen_requirement
 case: (prj cmd)=> [op|] //=.
 congr mk_hoare.
 - by apply/funext=> s; apply: propext; tauto.
-by apply/eq3_fun=> s x s'; apply: propext; tauto.
+by apply/eq3_fun=> s x s'; apply: propext; rewrite fsdistbind1; tauto.
 Qed.
 End lift_shared_contract.
 
