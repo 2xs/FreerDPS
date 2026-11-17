@@ -34,33 +34,22 @@ HB.mixin Record isMonadAltFreer (F : effect) (M : UU0 -> UU0)
 HB.structure Definition MonadAltFreer (F : effect) :=
   {M of isMonadAltFreer F M & }.
 
-  HB.mixin Record isFreerScheduler (F : effect) (M : UU0 -> UU0)
+(** * Scheduler *)
+
+(* par p q: every interleaving of the commands of p and q; shared_par: the
+   parallel composition of two programs computing the same kind of result.
+   Their laws are not fixed yet. *)
+HB.mixin Record isFreerScheduler (F : effect) (M : UU0 -> UU0)
     of MonadAltFreer F M := {
   par : forall X Y : UU0, M X -> M Y -> M (X * Y)%type ;
-  par_altr : forall X Y (p : M X) (a b : M Y),
-    par _ _ p (a [~] b) =
-      par _ _ p a [~] par _ _ p b ;
-  par_altl_trigger : forall X Y Z (a b : M X) (cmd : F Z)
-      (l : Z -> M Y),
-    par _ _ (a [~] b) (trigger Z cmd >>= l) =
-      par _ _ a (trigger Z cmd >>= l) [~]
-      par _ _ b (trigger Z cmd >>= l) ;
-  par_retl : forall X Y (x : X) (q : M Y),
-    par _ _ (Ret x) q = (M # pair x) q ;
-  par_retr : forall X Y (p : M X) (y : Y),
-    par _ _ p (Ret y) = (M # pair^~ y) p ;
-  par_trigger : forall X Y A B (c : F A) (k : A -> M X) (d : F B)
-      (l : B -> M Y),
-    par _ _ (trigger A c >>= k) (trigger B d >>= l) =
-      (trigger A c >>= fun r => par _ _ (k r) (trigger B d >>= l))
-      [~] (trigger B d >>= fun r => par _ _ (trigger A c >>= k) (l r))
-}.
+  shared_par : forall X : UU0, M X -> M X -> M X }.
 
 #[short(type=freerScheduler)]
 HB.structure Definition MonadFreerScheduler (F : effect) :=
   {M of isFreerScheduler F M & }.
 
 Arguments par {_ _ _ _}.
+Arguments shared_par {_ _ _}.
 
 (* p || q, for par p q; it shadows the boolean or of bool_scope, which
    is then written (b || c)%B *)
@@ -317,3 +306,16 @@ Definition alt_ptrigger {Fx F : effect} `{F -< Fx} {M : altFreerMonad Fx} :
     F ~~> M :=
   fun a cmd => trigger a (inj cmd).
 Arguments alt_ptrigger {_ _ _ _ _} _.
+
+
+Module AltFreerScheduler.
+Import AltFreerModel AltMod AltFreer.
+
+Section alt_freer_scheduler.
+Context (F : effect).
+
+Abbreviation acto := (@branch F).
+
+End alt_freer_scheduler.
+End AltFreerScheduler.
+HB.export AltFreerScheduler.
