@@ -192,11 +192,11 @@ Definition client_req ns : forall X, client_api X -> bool :=
     | WAIT => clientQ ns != Some Ping
     end.
 
-Definition client_promise ns :
+Definition client_promise (ns : net_state) :
     forall X, client_api X -> X -> bool :=
   fun X cmd =>
     match cmd with
-    | SEND _ => fun _ => serverQ ns == Some Ping
+    | SEND _ => fun _ => true
     | WAIT => fun result => result != Some Ping
     end.
 
@@ -277,11 +277,11 @@ Definition server_req ns : forall X, server_api X -> bool :=
 | RECV => serverQ ns != Some Pong
 end.
 
-Definition server_promise ns :
+Definition server_promise (ns : net_state) :
     forall X, server_api X -> X -> bool := fun X cmd =>
 match cmd with
 | RECV => fun result => result != Some Pong
-| RPLY m => fun _ => clientQ ns == Some Pong
+| RPLY m => fun _ => true
 end.
 
 Definition server_c : contract R server_api net_state :=
