@@ -8,6 +8,7 @@
 ./theories/init.v
 ./theories/effect.v
 ./theories/freer.v
+./theories/freer_alt.v
 ./theories/free_choice.v
 ./theories/component.v
 ./theories/contract.v
