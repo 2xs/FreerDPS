@@ -189,6 +189,12 @@ all: by inversion 1; ssubst; [
 Qed.
 End transmission.
 
+Section transmission_choice.
+Context {Fx : effect} `{H: @FlipEff R -< Fx} {M : choiceEqFreerMonad Fx R H}.
+Lemma transmit1 {A} (m : A): transmit 1%:i01 m ≈ (Ret (Some m) :> M (option A)).
+Proof. exact: freer_choice1. Qed.
+End transmission_choice.
+
 #[export] Hint Extern 0 (providesOnlyF (transmit _ _)) =>
   solve [exact: syn_transmit] : core.
 
@@ -328,13 +334,25 @@ case: output=> [[]|] /=.
     all: by rewrite post_ret=> -[] _ <-.
 Qed.
 
-Theorem ping_correct :
-  correct_component (prob_ping_protocol 1%:i01) (no_contract R ping_round) prob_ping_contract
+Theorem ping_correct1 :
+  correct_component (prob_ping_protocol 1%:i01)
+    (no_contract R ping_round)
+    prob_ping_contract
     (fun=> ping_inv).
 Proof.
 move=>[] n inv ? [] []; split=>[|m n' Hpost] /=.
   exact: pre_ping1.
   by split=>//; move: (post_ping1 inv Hpost).
 Qed.
+
+Lemma proto_outcome1 : prob_ping_protocol 1%:i01 _ one_round ≈ (Ret GotPong :> M outcome).
+Proof.
+  rewrite /prob_ping_protocol /prob_ping_proto /ping_pong_with /client_send /server_reply.
+rewrite /send. Search (ptrigger).
+Check transmit1. rewrite !bindA.
+rewrite (transmit1 (Fx:=ProtoF)).
+
+
+
 End protocol.
 End ProbProtocolM.
