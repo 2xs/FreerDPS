@@ -36,9 +36,6 @@ HB.structure Definition MonadAltFreer (F : effect) :=
 
 (** * Scheduler *)
 
-(* par p q: every interleaving of the commands of p and q; shared_par: the
-   parallel composition of two programs computing the same kind of result.
-   Their laws are not fixed yet. *)
 HB.mixin Record isFreerScheduler (F : effect) (M : UU0 -> UU0)
     of MonadAltFreer F M := {
   par : forall X Y : UU0, M X -> M Y -> M (X * Y)%type ;
@@ -66,29 +63,35 @@ with branch (F : effect) (A : Type) :=
 | single (b : alt_freer F A)
 | more (b : alt_freer F A) (bs : branch F A).
 
-Arguments pure [F A] (x).
-Arguments impure [F A B] (cmd k).
-Arguments single [F A] (b).
-Arguments more [F A] (b bs).
+Global Arguments pure [F A] (x).
+Global Arguments impure [F A B] (cmd k).
+Global Arguments single [F A] (b).
+Global Arguments more [F A] (b bs).
 
 (* Induction principle for a tree-like inductive : *)
 (* https://rocq-prover.org/doc/master/refman/proofs/writing-proofs/reasoning-inductives.html#generation-of-induction-principles-with-scheme *)
 Scheme alt_freer_mut := Induction for alt_freer Sort Prop
   with branch_mut := Induction for branch Sort Prop.
 
+Scheme alt_freer_mutrect := Induction for alt_freer Sort Type
+  with branch_mutrect := Induction for branch Sort Type.
+Combined Scheme alt_freer_mutind from alt_freer_mut,branch_mut.
+
 Section monad_s.
 
 Context (F : effect).
 Abbreviation acto := (@branch F).
 
+(* becomes [~] *)
 Fixpoint branch_cat {A} (m1 m2 : acto A) : acto A :=
   match m1 with
   | single b => more b m2
   | more b bs => more b (branch_cat bs m2)
   end.
 
+
 Lemma branch_catA A : associative (@branch_cat A).
-Proof. by move=> m1 m2 m3; elim: m1=> [b|b bs ih] //=; rewrite ih. Qed.
+Proof. by move=> m1 ??; elim: m1=> [b|b bs /= ->]. Qed.
 
 Fixpoint alt_freer_bind {A B} (b : alt_freer F A) (f : A -> acto B) : acto B :=
   match b with
@@ -121,6 +124,17 @@ Lemma branch_bind_cat A B (m1 m2 : acto A) (f : A -> acto B) :
     branch_cat (branch_bind m1 f) (branch_bind m2 f).
 Proof. by elim: m1=> [b|b bs ih] //=; rewrite ih branch_catA. Qed.
 
+Lemma branch_single_ind A (P : branch F A -> Prop) :
+  (forall x, P (single (pure x))) ->
+  (forall B (cmd : F B) k, (forall x, P (k x)) ->
+    P (single (impure cmd k))) ->
+  (forall b, P (single b) -> forall bs, P bs -> P (more b bs)) ->
+  forall m, P m.
+Proof.
+move=> pureP impureP moreP.
+exact: (@branch_mut F A (fun b => P (single b)) P pureP impureP
+  (fun _ => id) moreP).
+Qed.
 
 Let ret : idfun ~~> acto := fun A x => single (pure x).
 
@@ -129,23 +143,17 @@ Proof. by []. Qed.
 
 Let right_neutral : BindLaws.right_neutral (@branch_bind) ret.
 Proof.
-move=> A.
-apply: (@branch_mut F A (fun b => alt_freer_bind b (@ret A) = single b))
-  => [x|B cmd k ihk|b ih|b ih bs ihs] //.
-- rewrite alt_freer_bind_impure.
-  by congr (single (impure _ _)); exact/funext.
-by rewrite branch_bind_more ih ihs.
+move=> A. elim/branch_single_ind=>// [B cmd k ih | m ih o ihs ].
+- by congr (single (impure _ _)); exact/funext.
+- by rewrite branch_bind_more ihs -branch_bind1 ih.
 Qed.
 
 Let assoc : BindLaws.associative (@branch_bind).
 Proof.
 move=> A B C + f g.
-apply: (@branch_mut F A (fun b => branch_bind (alt_freer_bind b f) g =
-    alt_freer_bind b (fun x => branch_bind (f x) g)))
-  => [x|D cmd k ihk|b ih|b ih bs ihs] //.
-- rewrite alt_freer_bind_impure branch_bind1 !alt_freer_bind_impure.
-  by congr (single (impure _ _)); exact/funext.
-by rewrite !branch_bind_more branch_bind_cat ih ihs.
+elim/branch_single_ind=>//= [X cmd k ih | m ih o ihs].
+- by congr (single (impure _ _)); exact/funext.
+- by rewrite -ih -ihs branch_bind_cat.
 Qed.
 
 #[export]
@@ -219,10 +227,7 @@ Proof. by []. Qed.
 
 Lemma dnt_cat A (m1 m2 : acto A) :
   dnt h (m1 [~] m2) = dnt h m1 [~] dnt h m2.
-Proof.
-rewrite -branch_catE.
-by elim: m1=> [b|b bs ih] //=; rewrite ih altA.
-Qed.
+Proof. by elim: m1=> //= ??->; rewrite altA. Qed.
 
 End dnt_lemmas.
 
@@ -238,23 +243,19 @@ Let dnt_bind (N : altMonad) (h : F ~~> N) X Y (m : acto X)
     (f : X -> acto Y) :
   dnt h (m >>= f) = dnt h m >>= (fun x => dnt h (f x)).
 Proof.
-rewrite branch_bindE; move: m.
-apply: (@branch_mut F X (fun b => dnt h (alt_freer_bind b f) =
-    dnt_alt_freer h b >>= (fun x => dnt h (f x))))
-  => [x|B cmd k ihk|b ih|b ih bs ihs] //.
-- by rewrite bindretf.
-- rewrite alt_freer_bind_impure dnt1 !dnt_alt_freer_impure bindA.
-  by apply: eq_bind=> y; exact: ihk.
-by rewrite branch_bind_more branch_catE dnt_cat ih ihs /= alt_bindDl.
+elim/branch_single_ind: m=> [x | B cmd k ih | m ih o ihs] /=.
+- by rewrite !bindretf.
+- by rewrite bindA; congr (_ >>= _); exact/funext.
+- by rewrite -dnt1 alt_bindDl -ihs -ih branch_bindE branch_bind_more
+             branch_catE dnt_cat.
 Qed.
+
+Lemma more_is_alt {A} (m: alt_freer F A) (o: acto A) : more m o = single m [~] o.
+Proof. done. Qed.
 
 Let dnt_trigger (N : altMonad) (h : F ~~> N) X (cmd : F X) :
   dnt h (trigger_effect cmd) = h X cmd.
-Proof. by rewrite dnt1 dnt_alt_freer_impure; exact: bindmret. Qed.
-
-Let dnt_alt (N : altMonad) (h : F ~~> N) X (a b : acto X) :
-  dnt h (a [~] b) = dnt h a [~] dnt h b.
-Proof. exact: dnt_cat. Qed.
+Proof. exact: bindmret. Qed.
 
 Let dnt_unique (N : altMonad) (h : F ~~> N) (h' : acto ~~> N) :
     (forall X (x : X), h' X (Ret x) = Ret x) ->
@@ -265,17 +266,16 @@ Let dnt_unique (N : altMonad) (h : F ~~> N) (h' : acto ~~> N) :
   forall X (m : acto X), h' X m = dnt h m.
 Proof.
 move=> dret' dbind' dtrigger' dalt' X.
-apply: (@branch_mut F X (fun b => h' X (single b) = dnt_alt_freer h b))
-  => [x|B cmd k ihk|b ih|b ih bs ihs] //.
+elim/branch_single_ind=>[x | B cmd k ih | m ih o ihs].
 - exact: dret'.
-- rewrite -trigger_bindE dbind' dtrigger' dnt_alt_freer_impure.
-  by apply: eq_bind=> x; exact: ihk.
-by rewrite -[more b bs]/(single b [~] bs) dalt' ih ihs.
+- rewrite -trigger_bindE dbind' dtrigger' dnt_bind dnt_trigger. congr (_ >>= _).
+  exact/funext.
+- by rewrite more_is_alt dalt' ih ihs.
 Qed.
 
 #[export]
 HB.instance Definition _ := isMonadAltFreer.Build F acto
-  dnt_ret dnt_bind dnt_trigger dnt_alt dnt_unique.
+  dnt_ret dnt_bind dnt_trigger dnt_cat dnt_unique.
 
 End alt_freer.
 End AltFreer.
@@ -300,6 +300,79 @@ by rewrite /freer_to_alt_freer freer.denote_trigger denote_trigger.
 Qed.
 
 End freer_to_alt_freer.
+
+(* Experiment to see if AltFreer can be only `freer` without alt *)
+(* Result: I'm not sure it's possible. *)
+Module Freer.
+Section freer.
+Variable F : effect.
+
+Import AltFreerModel.
+
+Abbreviation acto := (@branch F).
+
+Definition trigger_effect : F ~~> acto := fun A cmd => single (impure (inj cmd) (fun x=> single (pure x))).
+Lemma trigger_bindE A B (cmd : F B) (f : B -> acto A) :
+  trigger_effect cmd >>= f = single (impure cmd f).
+Proof. by []. Qed.
+
+Fixpoint dnt (M: monad) (h : F ~~> M) {X} (m : acto X) : M X :=
+match m with
+| single inner => match inner with
+  | pure x => Ret x
+  | impure B fb k => h _ fb >>= fun b=> dnt h (k b)
+  end
+| more inner _ => match inner with
+  | pure x => Ret x
+  | impure B fb k => h _ fb >>= fun b=> dnt h (k b)
+  end
+end.
+
+Let dnt_ret (cm : monad) (h : F ~~> cm) X (x : X) :
+  dnt h (ret X x) = @hierarchy.ret cm X x.
+Proof. by []. Qed.
+
+Let dnt_bind : forall (cm : monad) (h : F ~~> cm) X Y m
+    (f : X -> acto Y),
+  dnt h (m >>= f) =
+  dnt h m >>= (fun x => dnt h (f x)).
+Proof.
+move=>cm h X Y + f.
+elim/branch_single_ind=> [x | B cmd k ih| m ih o ihs].
+- by rewrite !bindretf.
+- by rewrite /= bindA; congr bind; exact: funext.
+- rewrite branch_bindE branch_bind_more branch_catE.
+Admitted.
+
+Let dnt_trigger (cm : monad) (h : F ~~> cm) X (cmd : F X) :
+  dnt h (trigger_effect cmd) = h X cmd.
+Proof. exact: bindmret. Qed.
+
+Let dnt_unique : forall (cm : monad) (h : F ~~> cm)
+    (h' : acto ~~> cm),
+  (forall X (x : X), h' X (ret X x) = @hierarchy.ret cm X x) ->
+  (forall X Y (m : acto X) (f : X -> acto Y),
+    h' Y (m >>= f) = h' X m >>= (fun x => h' Y (f x))) ->
+  (forall X (cmd : F X),
+    h' X (trigger_effect cmd) = h X cmd) ->
+  forall X (m : acto X), h' X m = dnt h m.
+Proof.
+move=>cm h h' dret' dbind' dtrigger' X. rewrite /dnt.
+elim/branch_single_ind=> [x | B cmd k ih | m ih o ihs] //.
+- exact: dret'.
+- by rewrite -trigger_bindE dbind' dtrigger'; congr bind; exact: funext.
+- admit.
+Admitted.
+
+#[export]
+HB.instance Definition _ := isMonadFreer.Build F acto
+  dnt_ret dnt_bind dnt_trigger dnt_unique.
+
+End freer.
+End Freer.
+
+
+
 
 (* as ptrigger in freer.v: trigger a primitive of an effect provided by Fx *)
 Definition alt_ptrigger {Fx F : effect} `{F -< Fx} {M : altFreerMonad Fx} :
