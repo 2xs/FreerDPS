@@ -200,8 +200,8 @@ Definition client_promise ns :
     | WAIT => fun result => result != Some Ping
     end.
 
-Definition client_c : contract R client_api net_state :=
-  make_det_contract R c_step client_req client_promise.
+Definition client_c : contract client_api net_state :=
+  make_contract c_step client_req client_promise.
 
 
 Section client_respectful_and_run_lemmas.
@@ -216,7 +216,7 @@ Fact send_run (ins fns : net_state) (u:unit) (run : post (client_c |~ (send : M 
   /\ fns.(serverQ) = serverQ (fill_serverQ Ping ins).
 Proof.
 move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
-by case=> /fsdist.fsdist1_inj ->.
+by case=> ->.
 Qed.
 
 Fact wait_respect n (coh : clientQ n != Some Ping) : pre (client_c |~ (wait : M _)) n.
@@ -227,7 +227,7 @@ Fact wait_run (ins fns : net_state) p (run : post (client_c |~ (wait : M _)) ins
   fns.(clientQ) = None /\ fns.(serverQ) = ins.(serverQ).
 Proof.
 move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
-case=> /fsdist.fsdist1_inj ->.
+case=> ->.
 by case: ins=> sQ; case.
 Qed.
 
@@ -284,8 +284,8 @@ match cmd with
 | RPLY m => fun _ => clientQ ns == Some Pong
 end.
 
-Definition server_c : contract R server_api net_state :=
-  make_det_contract R server_step server_req server_promise.
+Definition server_c : contract server_api net_state :=
+  make_contract server_step server_req server_promise.
 
 Section server_respectful_and_run_lemmas.
 Context {Fx : effect} `{server_api -< Fx} {M : freerMonad Fx}.
@@ -300,7 +300,7 @@ Fact reply_run (ins fns : net_state) (u : unit)
   fns.(serverQ) = ins.(serverQ).
 Proof.
 move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
-by case=> /fsdist.fsdist1_inj ->.
+by case=> ->.
 Qed.
 
 Fact recv_respect n (coh : serverQ n != Some Pong) :
@@ -313,7 +313,7 @@ Fact recv_run (ins fns : net_state) (p : option msg)
   fns.(clientQ) = ins.(clientQ) /\ fns.(serverQ) = None.
 Proof.
 move: run; rewrite to_hoare_triggerE /= provided_calleeP /=.
-case=> /fsdist.fsdist1_inj ->.
+case=> ->.
 by case: ins; case.
 Qed.
 
@@ -374,7 +374,7 @@ Definition ping_protocol : component (M:=M) ping_round ProtoF :=
           end
     end.
 
-Definition ping_contract : contract R ProtoF net_state := client_c -^- server_c.
+Definition ping_contract : contract ProtoF net_state := client_c -^- server_c.
 Definition ping_inv (net : net_state) := serverQ net = None /\ clientQ net = None.
 
 Set Printing Implicit.
@@ -414,7 +414,7 @@ all: by rewrite post_ret=> -[] ? <- //.
 Qed.
 
 Theorem ping_correct :
-  correct_component ping_protocol (no_contract R ping_round) ping_contract
+  correct_component ping_protocol (no_contract ping_round) ping_contract
     (fun=> ping_inv).
 Proof.
 move=>[] n inv ? [] []; split=>[|m n' Hpost] /=.
