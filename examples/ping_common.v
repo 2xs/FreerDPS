@@ -65,6 +65,24 @@ Fixpoint retry_ping_pong (run : M outcome) (fuel : nat) : M outcome :=
   else
     run.
 
+Section no_prob.
+Context {A B C : Type}.
+
+Definition round_of (ask : M A) (serve : A -> M (option B))
+    (answer : B -> M outcome) : M outcome :=
+  ask >>= serve >>= fun served =>
+    if served is Some b then answer b else Ret LostPing.
+
+Definition serve_of (receive : A -> M (option msg)) (respond : M C) (a : A) :
+    M (option C) :=
+  receive a >>= fun inc =>
+    if inc is Some Ping then respond >>= fun c => Ret (Some c) else Ret None.
+
+Definition answer_of (wait : B -> M (option msg)) (b : B) : M outcome :=
+  wait b >>= fun inc => if inc is Some Pong then Ret GotPong else Ret LostPong.
+
+End no_prob.
+
 Section custom_protocol.
 Context {A B C : Type}.
 Context (client_transmit : {prob R} -> A -> M B).
@@ -77,19 +95,13 @@ Definition client_send psucc : M B :=
   initial_prog >>= client_transmit psucc.
 
 (* None marks a missing Ping; Some carries the reply transmission result. *)
-Definition server_reply psucc sent : M (option C) :=
-  retrieve_input sent >>= fun to_server =>
-    if to_server is Some Ping then
-      (reply >>= server_transmit psucc) >>= fun sent => Ret (Some sent)
-    else Ret None.
+Definition server_reply psucc : B -> M (option C) :=
+  serve_of retrieve_input (reply >>= server_transmit psucc).
 
-Definition client_receive sent : M outcome :=
-  wait_data sent >>= fun from_server =>
-    if from_server is Some Pong then Ret GotPong else Ret LostPong.
+Definition client_receive : C -> M outcome := answer_of wait_data.
 
 Definition ping_pong_with psucc : M outcome :=
-  (client_send psucc >>= server_reply psucc) >>= fun response =>
-    if response is Some sent then client_receive sent else Ret LostPing.
+  round_of (client_send psucc) (server_reply psucc) client_receive.
 
 Definition ping_pongs_with psucc (fuel : nat) : M outcome :=
   retry_ping_pong (ping_pong_with psucc) fuel.
@@ -134,7 +146,7 @@ Lemma ping_pongE psucc :
       else Ret LostPing).
 Proof.
 rewrite /ping_pong /ping_pong_with /client_send /server_reply /client_receive.
-rewrite !bindretf bindA.
+rewrite /round_of /serve_of /answer_of !bindretf bindA.
 congr (transmit psucc Ping >>= _).
 apply: boolp.funext=> -[[]|]; rewrite !bindretf //.
 rewrite bindA.

@@ -32,10 +32,17 @@ Proof.
 Qed.
 End about_freer_flip_monad.
 
-
 Import NetworkChannelMod.
 
 Local Abbreviation R := Rdefinitions.R.
+
+(** The packet just sent to the server ([is_server]) or to the client is
+    dropped, unless it is [kept]. *)
+Definition drop_new_packet (ns : net_state) (kept is_server : bool) :
+    net_state :=
+  if kept then ns
+  else if is_server then consume_serverQ ns else consume_clientQ ns.
+
 Section flip_contract.
 
 Definition flip_step is_server ns :
@@ -43,10 +50,6 @@ Definition flip_step is_server ns :
   fun T op => match op in (@FlipEff _ T) return T -> net_state with
   | flipe _ => fun kept => drop_new_packet ns kept is_server
   end.
-
-Lemma drop_new_packet_kept ns is_server :
-  drop_new_packet ns true is_server = ns.
-Proof. by case: is_server; case: ns=> [[?|] [?|]]. Qed.
 
 Definition select_queue (is_server : bool) ns : packet :=
   if is_server then serverQ ns else clientQ ns.
@@ -108,7 +111,6 @@ congr (_ >>= _).
 by apply: boolp.funext=> -[].
 Qed.
 
-
 Ltac ssubst :=
   lazymatch goal with
 | [ H : existT _ _ _ = existT _ _ _ |- _ ]
@@ -120,19 +122,9 @@ Lemma pre_transmit1 {A} is_server (a : A) (net : net_state)
     (queued : select_queue is_server net = expected_packet is_server) :
   pre (flip_contract is_server |~ transmit 1%:i01 a) net.
 Proof.
-rewrite /transmit /freer_choice /flip.
 rewrite freer_to_hoare_bindE.
 split; last by case; rewrite pre_ret.
-by rewrite to_hoare_triggerE /= provided_callerP /=.
-(*case=>/= [sq cq].
-rewrite post_to_hoare_triggerP /==> -[Hnet Hp].
-inversion Hp; ssubst; last first.
-- by move: H0 H2; rewrite onem_eq1=> ->; rewrite ltxx.
-by case: is_server Hnet queued Hp H3=> /=;
-rewrite /server_keep_or_drop /client_keep_or_drop /=;
-  case: net=> [s0 c0] /=;
-  rewrite conv1=> /[swap] -> -> /=;
-  rewrite pre_ret.*)
+exact/pre_to_hoare_triggerP.
 Qed.
 
 Lemma post_transmit1 {A} is_server {a : A} {ins fns : net_state}
@@ -143,14 +135,12 @@ Lemma post_transmit1 {A} is_server {a : A} {ins fns : net_state}
   result = Some a /\ fns = ins.
 Proof.
 move: run.
-rewrite  /transmit /freer_choice /flip.
 rewrite freer_to_hoare_bindE to_hoare_triggerE /=.
 case=> res; case=> net; case.
 rewrite provided_calleeP /=; case=> ->.
 inversion 1; ssubst; last first.
   by move: H0 H2; rewrite onem_eq1=> ->; rewrite ltxx.
-rewrite post_ret=> -[<- <-]; split=> //.
-exact: drop_new_packet_kept.
+by rewrite post_ret=> -[<- <-].
 Qed.
 End transmission.
 
@@ -197,11 +187,12 @@ Lemma pre_ping1 net :
   pre (prob_ping_contract |~ prob_ping_protocol (1%:i01) _ one_round) net.
 Proof.
 rewrite /prob_ping_protocol /prob_ping_proto /ping_pong_with.
-rewrite /client_send /server_reply /client_receive.
+rewrite /client_send /server_reply /client_receive /round_of /serve_of
+  /answer_of.
 rewrite !bindA /prob_ping_contract.
 rewrite freer_to_hoare_bindE freer_contract_left //
   freer_contract_prodT freer_contract_left //.
-split; first by exact:send_respect.
+split; first by rewrite send_respect.
 move=> [] [s1 c1] /send_run /= [-> ->].
 rewrite freer_to_hoare_bindE freer_contract_left //
   freer_contract_prodT freer_contract_right //.
@@ -210,13 +201,13 @@ move=> ? [s2 c2].
 move/(post_transmit1 true)=> /= [] // ? [] -> ->.
 rewrite freer_to_hoare_bindE freer_contract_right //
   freer_contract_prodT freer_contract_left //.
-split; first by exact/recv_respect/eqP.
+split; first by rewrite recv_respect; exact/eqP.
 move=> om [s3 c3].
 move/recv_run=> /= [] -> ->.
 case: om=> [[]|].
 rewrite bindA freer_to_hoare_bindE freer_contract_right //
   freer_contract_prodT freer_contract_left //.
-split; first by exact: reply_respect.
+split; first by rewrite reply_respect.
 move=> ? [s4 c4].
 move/reply_run=> /= [] -> ->.
 rewrite bindA freer_to_hoare_bindE freer_contract_right //
@@ -227,7 +218,7 @@ move/(post_transmit1 false)=> /= [] // ? [] -> ->.
 all: rewrite bindretf.
 rewrite freer_to_hoare_bindE freer_contract_left //
   freer_contract_prodT freer_contract_left //.
-split; first by exact/wait_respect/eqP.
+split; first by rewrite wait_respect; exact/eqP.
 move=> om [s6 c6].
 move/wait_run=> /= [] -> ->.
 case: om=> [[]|].
@@ -243,37 +234,32 @@ Proof.
   move: inv run.
   case: net=> s0 c0 [_ c0_ok].
   rewrite /prob_ping_protocol /prob_ping_proto /ping_pong_with.
-  rewrite /client_send /server_reply /client_receive.
+  rewrite /client_send /server_reply /client_receive /round_of /serve_of
+    /answer_of.
   rewrite !bindA /prob_ping_contract.
 
 rewrite freer_to_hoare_bindE freer_contract_left //
   freer_contract_prodT freer_contract_left //.
 case;case; case;case=> s1 c1; case.
 move/send_run=>/= [-> ->].
-
-
 rewrite freer_to_hoare_bindE freer_contract_left //
   freer_contract_prodT freer_contract_right //.
 case=>ou; case;case=> s2 c2; case.
 move/(post_transmit1 true)=>/= [] // ? ->.
-
 rewrite freer_to_hoare_bindE freer_contract_right //
   freer_contract_prodT freer_contract_left //.
 case=> output; case;case=> s3 c3; case.
 move/recv_run=>/= [-> ->].
-
 case: output=> [[]|] /=.
 (*3 cases from here:
  - Ping => we go through
  - Pong => should not be possible
  - None => we do nothing *)
-
 (* I. Ping. *)
   - rewrite bindA freer_to_hoare_bindE freer_contract_right //
       freer_contract_prodT freer_contract_left //.
     case;case; case;case=> s4 c4;case.
     move/reply_run=>/= [-> ->].
-
     rewrite bindA freer_to_hoare_bindE freer_contract_right //
       freer_contract_prodT freer_contract_right //.
     case=>ou'; case;case=> s5 c5;case.
