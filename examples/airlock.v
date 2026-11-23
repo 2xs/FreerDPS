@@ -144,8 +144,8 @@ relation between a command c and a state u;
 it is false only when the state of a door that we check is not u
 *)
 
-Definition doors_c : contract R DOORS state :=
-  make_det_contract R
+Definition doors_c : contract DOORS state :=
+  make_contract
    (fun s U cmd _ => doors_witness_update s U cmd)
    doors_requirement
    doors_promise.
@@ -176,7 +176,7 @@ rewrite freer_to_hoare_bindE/=; split.
   by rewrite to_hoare_triggerE /= provided_callerP.
 case=> w'; rewrite pre_to_hoare_whenP // !to_hoare_triggerE /=.
 rewrite provided_calleeP provided_callerP /=.
-by case=>/fsdist.fsdist1_inj -> ->.
+by case=>-> ->.
 Qed.
 
 Lemma open_door_respectful (s : state) d
@@ -187,7 +187,7 @@ rewrite /open_door freer_to_hoare_bindE; split.
   by rewrite pre_to_hoare_triggerP.
 case=> w'; rewrite pre_to_hoare_whenP // !to_hoare_triggerE /=.
 rewrite provided_calleeP provided_callerP /=.
-case=> /fsdist.fsdist1_inj -> ->.
+case=> -> ->.
 by move: safe=> /= /negPf ->.
 Qed.
 
@@ -197,9 +197,9 @@ Lemma close_door_run (s : state) d (s' : state) (x : unit)
 Proof.
 move: run; rewrite /close_door freer_to_hoare_bindE.
 move=> [opened [w] []].
-rewrite post_to_hoare_whenP post_to_hoare_triggerP=> -[/fsdist.fsdist1_inj ->].
+rewrite post_to_hoare_whenP post_to_hoare_triggerP=> -[->].
 case: opened=> /= [| /[swap] -> ->] // door_open [[]].
-rewrite post_to_hoare_triggerP=> -[/fsdist.fsdist1_inj -> _].
+rewrite post_to_hoare_triggerP=> -[-> _].
 by rewrite tog_equ_1 door_open.
 Qed.
 
@@ -216,8 +216,8 @@ Lemma doors_trigger_preserves_safe
 Proof.
 rewrite to_hoare_triggerE /=.
 rewrite /gen_requirement /gen_state_update /gen_promise.
-case: prj=> [door_op |_ [ /fsdist.fsdist1_inj -> _ //]] /=.
-move: door_op x; case=> d /= [] caller [/fsdist.fsdist1_inj -> _] _ //.
+case: prj=> [door_op |_ [ -> _ //]] /=.
+move: door_op x; case=> d /= [] caller [-> _] _ //.
 apply: (one_door_safe_all_doors_safe (toggle d s) d).
 move: caller.
 rewrite tog_equ_1 tog_equ_2 negbK.
@@ -274,7 +274,7 @@ case: cmd => [| d].
   + rewrite to_hoare_triggerE.
     exact: distinguished_caller.
   + rewrite to_hoare_triggerE.
-    move/distinguished_callee=> /fsdist.fsdist1_inj ->.
+    move/distinguished_callee=> ->.
     rewrite pre_to_hoare_whenP.
     case: (15 < cpt)%N => //=.
     rewrite freer_to_hoare_bindE; split => [|*].
@@ -292,7 +292,7 @@ Qed.
 
 Theorem controller_correct :
   correct_component controller (M := M)
-    (no_contract R CONTROLLER) doors_c (fun=> not_both_open).
+    (no_contract CONTROLLER) doors_c (fun=> not_both_open).
 Proof.
 move=> ? s ? ? cmd _; split=> [| ? ? hpost].
   exact: controller_pre.
