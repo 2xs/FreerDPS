@@ -46,6 +46,15 @@ Definition hoare_bind {T U V}
   mk_hoare (fun s => pre m s /\ (forall x, post m s x `<=` pre (k x)))
            (fun s x s2 => exists y s', post m s y s' /\ post (k y) s' x s2).
 
+Lemma hoare_ext {T U : Type} (h1 h2 : hoare T U) :
+    (forall s, pre h1 s = pre h2 s) ->
+    (forall s x s', post h1 s x s' = post h2 s x s') ->
+  h1 = h2.
+Proof.
+case: h1 h2=> [pre1 post1] [pre2 post2] /= pre_eq post_eq.
+by congr mk_hoare; [exact: funext | exact: eq3_fun].
+Qed.
+
 Section hm.
 Variable T : Type.
 Let ret := @hoare_ret T.
@@ -61,17 +70,15 @@ rewrite /bind /ret /hoare_bind /hoare_ret/=; congr mk_hoare.
   by rewrite ex2C ex2_eqr ex_eqr.
 Qed.
 
-(* Local Open Scope ssripat_scope. *)
-
 Let left_neutral : BindLaws.left_neutral bind ret.
 Proof.
 move=> A B a f; rewrite /bind /ret /hoare_bind /hoare_ret/=.
-move fa : (f a) => [pr po]; congr mk_hoare.
-- apply/funext=> s; rewrite andTP; apply/propext; split.
+move fa : (f a) => [pr po].
+apply: hoare_ext=> [s | s b s'] /=.
+- rewrite andTP; apply/propext; split.
   + by move=> /(_ a s); rewrite fa/=; exact.
   + by move=> prs _ _ [<- <-]; rewrite fa.
-- apply/eq3_fun => s b s'.
-  under eq2_exists do rewrite andC andA.
+- under eq2_exists do rewrite andC andA.
   rewrite ex2C.
   under eq_exists do rewrite ex_andl.
   by rewrite ex_eqr_sym ex_eqr_sym fa.
@@ -80,8 +87,8 @@ Qed.
 Let assoc : BindLaws.associative bind.
 Proof.
 move=> A B C m f g; rewrite /bind /ret /hoare_bind /hoare_ret/=.
-case: m => prA poA/=; congr mk_hoare.
-- apply/funext => s; apply/propext; split.
+case: m => prA poA/=; apply: hoare_ext=> [s | s c s'] /=.
+- apply/propext; split.
   + move=> [[prAs poApre postpre]].
     split => // a s1 sas1; split=> [|b s2 s'bs2].
       exact: poApre.
@@ -90,8 +97,7 @@ case: m => prA poA/=; congr mk_hoare.
       by split=> // a s1 /poApre[].
     move=> b s1 [x [s2]] [] /poApre [fxs2] /[swap] s2bs1.
     exact.
-- apply: eq3_fun => s c s1.
-  under eq2_exists do rewrite -ex_andl.
+- under eq2_exists do rewrite -ex_andl.
   rewrite ex3C; apply: eq_exists => a.
   under eq2_exists do rewrite -ex_andl.
   rewrite ex3C; apply: eq_exists => s2.
@@ -169,42 +175,36 @@ apply: (@denote_ind _ _ _ _  (fun X => preserves_invariant invariant)).
 - exact: H.
 Qed.
 
-From mathcomp Require Import reals.
-From infotheo Require Import fsdist realType_ext.
-
 Section hoare_of_contract.
-Context {R : realType} {Fx F : effect} `{F -<? Fx} (S : choiceType) (c : contract R F S).
+Context {Fx F : effect} `{F -<? Fx} (S : Type) (c : contract F S).
 
 Local Open Scope classical_set_scope.
 
 Definition hoare_of_contract : Fx ~~> hoare S :=
   fun U cmd => mk_hoare
-    (gen_requirement R c ^~ cmd)
-    (fun s (x : U) s' => fsdist1 s' = gen_state_update R c s cmd x /\
-                         gen_promise R c s cmd x).
+    (gen_requirement c ^~ cmd)
+    (fun s (x : U) s' => s' = gen_state_update c s cmd x /\
+                         gen_promise c s cmd x).
 
 Definition freer_to_hoare {M : freerMonad Fx} : M ~~> hoare S :=
   denote _ hoare_of_contract.
 
 End hoare_of_contract.
 Arguments hoare_of_contract : simpl never.
-Arguments freer_to_hoare {R Fx F _ M S} c {U} : rename, simpl never.
+Arguments freer_to_hoare {Fx F _ M S} c {U} : rename, simpl never.
 
 (** A Hoare triple can be interpreted from the program `p`
   * through the contract `c`.
   *)
-Notation "c |~ p" := (@freer_to_hoare _ _ _ _ _ c _ _ p)
+Notation "c |~ p" := (@freer_to_hoare _ _ _ _ c _ _ p)
   (at level 60, no associativity).
 
 Section freer_to_hoare_lemmas.
-Context {R : realType} {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx}
- (S : choiceType) (c : contract R F S).
-
-(* Context {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx} *)
-    (* (S : Type) (c : contract F S). *)
+Context {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx}
+ (S : Type) (c : contract F S).
 
 Local Open Scope classical_set_scope.
-Check c.
+
 Lemma pre_ret {U : Type} (u : U) : pre (c |~ (Ret u : M _)) = [set: S].
 Proof. by rewrite /freer_to_hoare denote_ret. Qed.
 
@@ -224,8 +224,8 @@ Qed.
 End freer_to_hoare_lemmas.
 
 Section GenericToHoareSection.
-Context {R : realType} {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx}
-    (S : choiceType) (c : contract R F S).
+Context {Fx F : effect} `{F -<? Fx} {M : freerMonad Fx}
+    (S : Type) (c : contract F S).
 
 Lemma to_hoare_triggerE (a : Type) (cmd : Fx a) :
   (c |~ (trigger a cmd : M _)) = hoare_of_contract c cmd.
@@ -283,9 +283,9 @@ End WhenFacts.
 
 End GenericToHoareSection.
 
-Lemma to_hoare_preserves_invariant {R : realType} {Fx F : effect} `{F -<? Fx}
-  {M : inductiveFreerMonad Fx} {S : choiceType}
-  (invariant : set S) (c : contract R F S)
+Lemma to_hoare_preserves_invariant {Fx F : effect} `{F -<? Fx}
+  {M : inductiveFreerMonad Fx} {S : Type}
+  (invariant : set S) (c : contract F S)
   (handler_preserves : forall (A : UU0) (cmd : Fx A),
     preserves_invariant invariant (hoare_of_contract c cmd)) (A : UU0) (p : M A) :
   preserves_invariant invariant (c |~ p).
@@ -294,8 +294,8 @@ Proof. exact: denote_preserves_invariant. Qed.
 (** ** Trigger Views *)
 
 Section contract_trigger_helpers.
-Context {R : realType} {Fx F : effect} `{F -< Fx} {M : freerMonad Fx}
-    (S : choiceType) (c : contract R F S) {A : Type}.
+Context {Fx F : effect} `{F -< Fx} {M : freerMonad Fx}
+    (S : Type) (c : contract F S) {A : Type}.
 
 Lemma pre_to_hoare_triggerP (cmd : F A) (s : S) :
   pre (c |~ (ptrigger cmd : M _)) s <->
@@ -304,7 +304,7 @@ Proof. by rewrite to_hoare_triggerE /= provided_callerP. Qed.
 
 Lemma post_to_hoare_triggerP (cmd : F A) (s : S) (a : A) (s' : S) :
   post (c |~ (ptrigger cmd : M _)) s a s' <->
-  fsdist1 s' = state_update c s cmd a /\ promise c s cmd a.
+  s' = state_update c s cmd a /\ promise c s cmd a.
 Proof. by rewrite to_hoare_triggerE /= provided_calleeP. Qed.
 
 End contract_trigger_helpers.
@@ -342,8 +342,8 @@ Definition providesOnlyF (n : M A) := {m | freerSem (F := F) m = n}.
 End split_effects.
 
 Section contract_correspondance.
-Context {R : realType} {Fx F G : effect} `{F ;; G -<< Fx} {M : freerMonad Fx}
-  {T : choiceType} {U : UU0} (cf : contract R F T) (cg : contract R G T).
+Context {Fx F G : effect} `{F ;; G -<< Fx} {M : freerMonad Fx}
+  {T : Type} {U : UU0} (cf : contract F T) (cg : contract G T).
 
 Lemma freer_contract_left (m : M U) :
   providesOnlyF (F:=F) m -> (cf -^- cg |~ m) = (cf |~ m).
@@ -358,9 +358,7 @@ case=> syntax; elim: syntax m=>
 - rewrite !denote_trigger /hoare_of_contract /sharedcontractprod /=.
   rewrite /gen_state_update /gen_requirement /gen_promise /=.
   rewrite injK_Some injK_None.
-  congr mk_hoare.
-  + by apply/funext=> s; rewrite andPT.
-  + by apply/eq3_fun=> s b s'; rewrite andPT.
+  by apply: hoare_ext=> *; rewrite /= andPT.
 Qed.
 
 Lemma freer_contract_right (m : M U) :
@@ -376,9 +374,7 @@ case=> syntax; elim: syntax m=>
 - rewrite !denote_trigger /hoare_of_contract /sharedcontractprod /=.
   rewrite /gen_state_update /gen_requirement /gen_promise /=.
   rewrite injK_Some injK_None.
-  congr mk_hoare.
-  + by apply/funext=> s; rewrite andTP.
-  + by apply/eq3_fun=> s b s'; rewrite andTP.
+  by apply: hoare_ext=>* /=; rewrite andTP.
 Qed.
 
 End contract_correspondance.
@@ -402,13 +398,13 @@ elim: syntax=>
 Qed.
 End syntax_inclusion.
 Section lift_shared_contract.
-Context {R : realType} {Fx Fg F G : effect} `{F ;; G -<< Fg} `{Fg -< Fx}.
-Context {M : freerMonad Fx} {T : choiceType}  {U : Type}.
-Variables (cf : contract R F T) (cg : contract R G T).
+Context {Fx Fg F G : effect} `{F ;; G -<< Fg} `{Fg -< Fx}.
+Context {M : freerMonad Fx} {T : Type} {U : Type}.
+Variables (cf : contract F T) (cg : contract G T).
 
 Lemma freer_contract_prodT (m : M U) :
-  ((cf -^- cg : contract R Fg T) |~ m) =
-  ((cf -^- cg : contract R Fx T) |~ m).
+  ((cf -^- cg : contract Fg T) |~ m) =
+  ((cf -^- cg : contract Fx T) |~ m).
 Proof.
 rewrite /freer_to_hoare.
 congr (denote _ _ U m).
@@ -417,9 +413,7 @@ apply: boolp.funext=> cmd.
 rewrite /hoare_of_contract /sharedcontractprod /gen_requirement
    /gen_state_update /gen_promise /=.
 case: (prj cmd)=> [op|] //=.
-congr mk_hoare.
-- by apply/funext=> s; apply: propext; tauto.
-by apply/eq3_fun=> s x s'; apply: propext; tauto.
+by apply:hoare_ext=>* /=; apply: propext; tauto.
 Qed.
 End lift_shared_contract.
 
