@@ -38,47 +38,15 @@ Import NetworkChannelMod.
 Local Abbreviation R := Rdefinitions.R.
 Section flip_contract.
 
-Lemma fdist1_serverQ (p: {prob R}) nQ n1 n2 :
-  fsdist1 nQ = fsdist1 n1 <| p |> fsdist1 n2 ->
-  fsdist1 (serverQ nQ) = fsdist1 (serverQ n1) <| p |> fsdist1 (serverQ n2).
-Proof.
-move/(congr1 (fsdistmap serverQ)).
-by rewrite fsdistmap_affine !fsdistmap1.
-Qed.
-
-Lemma fdist1_clientQ (p: {prob R}) nQ n1 n2 :
-  fsdist1 nQ = fsdist1 n1 <| p |> fsdist1 n2 ->
-  fsdist1 (clientQ nQ) = fsdist1 (clientQ n1) <| p |> fsdist1 (clientQ n2).
-Proof.
-move/(congr1 (fsdistmap clientQ)).
-by rewrite fsdistmap_affine !fsdistmap1.
-Qed.
-
-Definition server_keep_or_drop (p: {prob R}) (ns : net_state) :
-  R.-dist net_state :=
-match ns with
-| mk_chan _ cQ => (fsdist1 ns) <| p |> (fsdist1 (mk_chan None cQ))
-end.
-
-Definition client_keep_or_drop (p: {prob R}) (ns : net_state) :
-  R.-dist net_state :=
-match ns with
-| mk_chan sQ _ => (fsdist1 ns) <| p |> (fsdist1 (mk_chan sQ None))
-end.
-
-Definition keep_or_drop p ns (is_server: bool) :=
-if is_server then server_keep_or_drop p ns
-else client_keep_or_drop p ns.
-
 Definition flip_step is_server ns :
-  forall X, @FlipEff R X -> X -> R.-dist net_state
-:= fun T op _res => match op in (@FlipEff _ T) with
-| flipe p => keep_or_drop p ns is_server
-end.
-  (* avec prob p :
-  dist p {
-  - keep => Ret ns
-  - drop => drop_new_packet ns is_server  } *)
+    forall X, @FlipEff R X -> X -> net_state :=
+  fun T op => match op in (@FlipEff _ T) return T -> net_state with
+  | flipe _ => fun kept => drop_new_packet ns kept is_server
+  end.
+
+Lemma drop_new_packet_kept ns is_server :
+  drop_new_packet ns true is_server = ns.
+Proof. by case: is_server; case: ns=> [[?|] [?|]]. Qed.
 
 Definition select_queue (is_server : bool) ns : packet :=
   if is_server then serverQ ns else clientQ ns.
@@ -108,7 +76,7 @@ Inductive flip_promise is_server (net : net_state):
 
 Definition flip_contract (is_server : bool) :
 (* (is_server : bool) : *)
-    contract R (@FlipEff R) net_state :=
+    contract (@FlipEff R) net_state :=
   make_contract
     (flip_step is_server)
     (flip_requirement is_server)
@@ -163,7 +131,7 @@ inversion Hp; ssubst; last first.
 by case: is_server Hnet queued Hp H3=> /=;
 rewrite /server_keep_or_drop /client_keep_or_drop /=;
   case: net=> [s0 c0] /=;
-  rewrite conv1=> /[swap] -> /fsdist1_inj -> /=;
+  rewrite conv1=> /[swap] -> -> /=;
   rewrite pre_ret.*)
 Qed.
 
@@ -178,14 +146,11 @@ move: run.
 rewrite  /transmit /freer_choice /flip.
 rewrite freer_to_hoare_bindE to_hoare_triggerE /=.
 case=> res; case=> net; case.
-rewrite provided_calleeP /=; case.
-case: is_server queued=> /=;
-  rewrite /server_keep_or_drop /client_keep_or_drop /=;
-  case: ins=> [s0 c0] /=;
-  rewrite conv1=> -> /fsdist1_inj -> /=.
-all: by inversion 1; ssubst; [
-    rewrite post_ret; case=> -> -> |
-    move: H0 H2; rewrite onem_eq1=> ->; rewrite ltxx].
+rewrite provided_calleeP /=; case=> ->.
+inversion 1; ssubst; last first.
+  by move: H0 H2; rewrite onem_eq1=> ->; rewrite ltxx.
+rewrite post_ret=> -[<- <-]; split=> //.
+exact: drop_new_packet_kept.
 Qed.
 End transmission.
 
@@ -224,7 +189,7 @@ Definition prob_ping_protocol (p : {prob R}) : component ping_round ProtoF :=
     | one_round => prob_ping_proto p
     end.
 
-Definition prob_ping_contract : contract R ProtoF net_state :=
+Definition prob_ping_contract : contract ProtoF net_state :=
 (client_c -^- flip_contract true) -^-
 (server_c -^- flip_contract false).
 
@@ -329,7 +294,7 @@ case: output=> [[]|] /=.
 Qed.
 
 Theorem ping_correct :
-  correct_component (prob_ping_protocol 1%:i01) (no_contract R ping_round) prob_ping_contract
+  correct_component (prob_ping_protocol 1%:i01) (no_contract ping_round) prob_ping_contract
     (fun=> ping_inv).
 Proof.
 move=>[] n inv ? [] []; split=>[|m n' Hpost] /=.
