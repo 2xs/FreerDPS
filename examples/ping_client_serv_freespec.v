@@ -170,6 +170,11 @@ Definition drop_new_packet ns (keep: bool) (q: bool) :=
 if q then drop_from_serv ns keep
 else drop_from_cli ns keep.
 
+Definition chan_inv ns := serverQ ns != Some Pong /\ clientQ ns != Some Ping.
+
+Lemma chan_inv_empty : chan_inv {| serverQ := None; clientQ := None |}.
+Proof. by split; apply/eqP. Qed.
+
 End NetworkChannelMod.
 
 Import NetworkChannelMod.
@@ -192,12 +197,12 @@ Definition client_req ns : forall X, client_api X -> bool :=
     | WAIT => clientQ ns != Some Ping
     end.
 
-Definition client_promise ns :
+Definition client_promise (ns : net_state) :
     forall X, client_api X -> X -> bool :=
   fun X cmd =>
     match cmd with
-    | SEND _ => fun _ => serverQ ns == Some Ping
-    | WAIT => fun result => result != Some Ping
+    | SEND _ => fun _ => true
+    | WAIT => fun result => result == clientQ ns
     end.
 
 Definition client_c : contract client_api net_state :=
@@ -277,11 +282,13 @@ Definition server_req ns : forall X, server_api X -> bool :=
 | RECV => serverQ ns != Some Pong
 end.
 
-Definition server_promise ns :
+(** As for the client: RECV returns the content of the server queue, and
+    RPLY promises nothing. *)
+Definition server_promise (ns : net_state) :
     forall X, server_api X -> X -> bool := fun X cmd =>
 match cmd with
-| RECV => fun result => result != Some Pong
-| RPLY m => fun _ => clientQ ns == Some Pong
+| RECV => fun result => result == serverQ ns
+| RPLY m => fun _ => true
 end.
 
 Definition server_c : contract server_api net_state :=
@@ -375,51 +382,69 @@ Definition ping_protocol : component (M:=M) ping_round ProtoF :=
     end.
 
 Definition ping_contract : contract ProtoF net_state := client_c -^- server_c.
-Definition ping_inv (net : net_state) := serverQ net = None /\ clientQ net = None.
-
-Set Printing Implicit.
 
 Lemma pre_ping (net : net_state) :
-  ping_inv net -> pre (ping_contract |~ ping_protocol one_round) net.
+  pre (ping_contract |~ ping_protocol one_round) net.
 Proof.
-move=>[s0 c0]; rewrite /= bindA.
+rewrite /= bindA.
 rewrite freer_to_hoare_bindE freer_contract_left //=; split.
   exact: send_respect.
-case=> [] [s1 c1] /send_run /=.
-case=> -> ->.
+case=> [] [s1 c1] /send_run /= [-> ->].
 rewrite freer_to_hoare_bindE freer_contract_right //; split.
   exact/s_p_respect/eqP.
-move=> [[]|] [s2 c2] /s_p_run /= => -[] -> ->.
+move=> [[]|] [s2 c2] /s_p_run /= [-> ->].
 + rewrite freer_to_hoare_bindE freer_contract_left //=; split.
     exact/wait_respect/eqP.
-move=> [[]|] [s3 c3] /wait_run => /= -[] -> ->.
+  move=> [[]|] [s3 c3] /wait_run /= [-> ->].
 all: by rewrite pre_ret.
 Qed.
 
 Lemma post_ping (n n' : net_state) (result : outcome) :
-  ping_inv n -> post (ping_contract |~ ping_protocol one_round) n result n' ->
-   ping_inv n'.
+  chan_inv n -> post (ping_contract |~ ping_protocol one_round) n result n' ->
+  chan_inv n'.
 Proof.
-move=> [s0 c0]; rewrite /= bindA.
-rewrite freer_to_hoare_bindE.
-rewrite freer_contract_left //;
-  case=>[[]] [[s1 c1]] [].
-move/send_run=> /= [] -> ->.
-rewrite freer_to_hoare_bindE freer_contract_right //;
-  case=>[[[]|]] [[s2 c2]] [] /= => /s_p_run=> /= -[] -> -> .
-- rewrite freer_to_hoare_bindE freer_contract_left //;
-    case=>[inc] [[s3 c3]] [].
-  move/wait_run=> /= [] -> ->; case: inc=>[[]|].
-all: by rewrite post_ret=> -[] ? <- //.
+case: n=> s0 c0 [_ c0_ok]; rewrite /= bindA.
+rewrite freer_to_hoare_bindE freer_contract_left //.
+case=> [[]] [[s1 c1]] [] /send_run /= [-> ->].
+rewrite freer_to_hoare_bindE freer_contract_right //.
+case=> [[[]|]] [[s2 c2]] [] /s_p_run /= [-> ->].
+- rewrite freer_to_hoare_bindE freer_contract_left //.
+  case=> [inc] [[s3 c3]] [] /wait_run /= [-> ->].
+  by case: inc=> [[]|]; rewrite post_ret=> -[_ <-]; exact: chan_inv_empty.
+all: by rewrite post_ret=> -[_ <-]; split=> //; apply/eqP.
+Qed.
+
+(** Non-vacuity: from the empty network, the round can end with [GotPong]. *)
+Lemma ping_got_pong :
+  post (ping_contract |~ ping_protocol one_round)
+    {| serverQ := None; clientQ := None |} GotPong
+    {| serverQ := None; clientQ := None |}.
+Proof.
+rewrite /= bindA freer_to_hoare_bindE freer_contract_left //.
+exists tt, {| serverQ := Some Ping; clientQ := None |}; split.
+  by rewrite post_to_hoare_triggerP; split=> //; apply/eqP.
+rewrite freer_to_hoare_bindE freer_contract_right //.
+exists (Some Ping), {| serverQ := None; clientQ := Some Pong |}; split.
+  rewrite /S_p freer_to_hoare_bindE.
+  exists (Some Ping), {| serverQ := None; clientQ := None |}; split.
+    by rewrite post_to_hoare_triggerP; split=> //; apply/eqP.
+  rewrite freer_to_hoare_bindE.
+  exists tt, {| serverQ := None; clientQ := Some Pong |}; split.
+    by rewrite post_to_hoare_triggerP; split=> //; apply/eqP.
+  by rewrite post_ret.
+rewrite freer_to_hoare_bindE freer_contract_left //.
+exists (Some Pong), {| serverQ := None; clientQ := None |}; split.
+  by rewrite post_to_hoare_triggerP; split=> //; apply/eqP.
+by rewrite post_ret.
 Qed.
 
 Theorem ping_correct :
   correct_component ping_protocol (no_contract ping_round) ping_contract
-    (fun=> ping_inv).
+    (fun=> chan_inv).
 Proof.
-move=>[] n inv ? [] []; split=>[|m n' Hpost] /=.
+move=> [] n inv ? [] []; split=> [|m n' run] /=.
   exact: pre_ping.
-by split=>//; move: (post_ping inv Hpost).
+by split=> //; exact: post_ping inv run.
 Qed.
 
 End proto_s.

@@ -193,23 +193,16 @@ Definition prob_ping_contract : contract ProtoF net_state :=
 (client_c -^- flip_contract true) -^-
 (server_c -^- flip_contract false).
 
-(* TODO put in common *)
-Definition ping_inv (net : net_state) :=
-  (serverQ net = None) /\ (clientQ net = None).
-
 Lemma pre_ping1 net :
-  ping_inv net ->
   pre (prob_ping_contract |~ prob_ping_protocol (1%:i01) _ one_round) net.
 Proof.
-move=> [s0 c0].
 rewrite /prob_ping_protocol /prob_ping_proto /ping_pong_with.
 rewrite /client_send /server_reply /client_receive.
 rewrite !bindA /prob_ping_contract.
 rewrite freer_to_hoare_bindE freer_contract_left //
   freer_contract_prodT freer_contract_left //.
 split; first by exact:send_respect.
-move=> [] [s1 c1] /send_run /=.
-rewrite c0=> -[] -> ->.
+move=> [] [s1 c1] /send_run /= [-> ->].
 rewrite freer_to_hoare_bindE freer_contract_left //
   freer_contract_prodT freer_contract_right //.
 split; first by apply: pre_transmit1.
@@ -242,12 +235,13 @@ all: by rewrite pre_ret.
 Qed.
 
 Lemma post_ping1 {net res net'}
-  (H: ping_inv net)
-  (run: post (prob_ping_contract |~ prob_ping_protocol (1%:i01) _ one_round) net res net') :
-  ping_inv net'.
+  (inv : chan_inv net)
+  (run : post (prob_ping_contract |~ prob_ping_protocol (1%:i01) _ one_round)
+    net res net') :
+  chan_inv net'.
 Proof.
-  case: H run.
-  case: net=>??/= -> ->.
+  move: inv run.
+  case: net=> s0 c0 [_ c0_ok].
   rewrite /prob_ping_protocol /prob_ping_proto /ping_pong_with.
   rewrite /client_send /server_reply /client_receive.
   rewrite !bindA /prob_ping_contract.
@@ -290,12 +284,13 @@ case: output=> [[]|] /=.
     case=> output; case;case=> s6 c6; case.
     move/wait_run=>/= [-> ->].
     case: output=> [[]|].
-    all: by rewrite post_ret=> -[] _ <-.
+    all: by rewrite post_ret=> -[] _ <-; split=> //; apply/eqP.
 Qed.
 
 Theorem ping_correct :
-  correct_component (prob_ping_protocol 1%:i01) (no_contract ping_round) prob_ping_contract
-    (fun=> ping_inv).
+  correct_component (prob_ping_protocol 1%:i01) (no_contract ping_round)
+    prob_ping_contract
+    (fun=> chan_inv).
 Proof.
 move=>[] n inv ? [] []; split=>[|m n' Hpost] /=.
   exact: pre_ping1.
