@@ -7,7 +7,7 @@ From monae Require Import preamble hierarchy monad_lib proba_lib state_lib.
 From monae Require Import monad_transformer proba_model.
 From FreerDPS Require Import all_freerdps ping_common ping_components.
 From FreerDPS Require Import prob_state.
-From FreerDPS Require prob_monad_ping.
+From FreerDPS Require Import prob_monad_ping.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -365,19 +365,8 @@ exact/ping_with_correct/lossy_server_shared_correct/lossy_client_shared_correct.
 Qed.
 End lossy_protocol.
 
-Section denote_retry.
-Context {Fx : effect} {M : freerMonad Fx} {N : monad}.
-Lemma denote_retry (h : Fx ~~> N) (run : M outcome) fuel :
-  denote _ h _ (retry_ping_pong run fuel) =
-  retry_ping_pong (denote _ h _ run) fuel.
-Proof.
-elim: fuel=> [//|fuel IH] /=; rewrite denote_bind.
-by congr (_ >>= _); apply: funext=> -[]; rewrite compE /= ?denote_ret.
-Qed.
-End denote_retry.
-
 (* -- PROBABILITIES START HERE -- *)
-
+Abbreviation ptransmit := prob_monad_ping.transmit.
 Module LossySpecs.
 Section specs.
 Context {N : probDrStateMonad R net_state} (p : {prob R}).
@@ -406,9 +395,9 @@ Definition spec_server : SERVER ~~> N :=
 Definition ref_ping_pong : ping_round ~~> N :=
   fun _ cmd => match cmd in ping_round T return N T with
   | one_round =>
-      ping_pong (transmit := prob_monad_ping.transmit) p%:num.~%:i01
+      ping_pong (transmit := ptransmit) p%:num.~%:i01
   | retry_round fuel =>
-      ping_pongs (transmit := prob_monad_ping.transmit) p%:num.~%:i01 fuel
+      ping_pongs (transmit := ptransmit) p%:num.~%:i01 fuel
   end.
 
 End specs.
@@ -557,19 +546,6 @@ congr (_ >>= _).
   + by rewrite denote_ret.
 Qed.
 
-Remark consume_serverQ_twice s : consume_serverQ (consume_serverQ s) = consume_serverQ s.
-Proof. done. Qed.
-Remark consume_clientQ_twice s : consume_clientQ (consume_clientQ s) = consume_clientQ s.
-Proof. done. Qed.
-Remark consume_fill_serverQ m s : consume_serverQ (fill_serverQ m s) =  {| serverQ := None; clientQ := clientQ s |}.
-Proof. done. Qed.
-Remark consume_fill_clientQ m s : consume_clientQ (fill_clientQ m s) =  {| serverQ := serverQ s; clientQ := None |}.
-Proof. done. Qed.
-Remark consume_fill_serverQ_empty m : consume_serverQ (fill_serverQ m empty_net) = empty_net.
-Proof. done. Qed.
-Remark consume_fill_clientQ_empty m : consume_clientQ (fill_clientQ m empty_net) =  empty_net.
-Proof. done. Qed.
-
 Lemma lossy_ping_distribution :
   put empty_net >> denote _ h _ (lossy_ping one_round) =
   put empty_net >> exchange_once (M := N) (choose := choice) p%:num.~%:i01.
@@ -587,25 +563,22 @@ Lemma lossy_pings_exchanges fuel :
   put empty_net >> denote _ h _ (lossy_ping (retry_round fuel)) =
   put empty_net >> exchanges (M := N) (choose := choice) p%:num.~%:i01 fuel.
 Proof.
-have := lossy_ping_distribution; rewrite lossy_round_denote.
-rewrite denote_retry lossy_round_denote; set round := round_of _ _ _.
-elim: fuel=> [|fuel IH] /= one; first exact: one.
-rewrite -bindA one bindA /exchange_once /exchange !choice_bindDl !bindretf /=.
-by rewrite !choice_bindDr IH.
+have := lossy_ping_distribution.
+rewrite denote_retry_until !lossy_round_denote; set round := round_of _ _ _.
+elim: fuel=> // fuel /[swap] one /(_ one) IH.
+by rewrite -bindA one bindA !choice_bindDl !bindretf /= !choice_bindDr IH.
 Qed.
 
 Lemma denote_lossy_ping :
   put empty_net >> denote _ h _ (lossy_ping one_round) =
-  put empty_net >>
-    ping_pong (transmit := prob_monad_ping.transmit) p%:num.~%:i01.
+  put empty_net >> ping_pong (transmit := ptransmit) p%:num.~%:i01.
 Proof.
-by rewrite lossy_ping_distribution prob_monad_ping.ping_pong_distribution.
+by rewrite lossy_ping_distribution ping_pong_distribution.
 Qed.
 
 Lemma denote_lossy_pings fuel :
   put empty_net >> denote _ h _ (lossy_ping (retry_round fuel)) =
-  put empty_net >>
-    ping_pongs (transmit := prob_monad_ping.transmit) p%:num.~%:i01 fuel.
+  put empty_net >> ping_pongs (transmit := ptransmit) p%:num.~%:i01 fuel.
 Proof.
 by rewrite lossy_pings_exchanges prob_monad_ping.ping_pongs_exchanges.
 Qed.
@@ -617,8 +590,8 @@ Lemma lossy_ping0 :
   put empty_net >> Ret GotPong.
 Proof.
 move=> p0; have onem_p1 : p%:num.~%:i01 = 1%:i01.
-  by apply: val_inj; rewrite /= p0 onem0.
-by rewrite denote_lossy_ping onem_p1 prob_monad_ping.ping_pong1.
+- by apply: val_inj; rewrite /= p0 onem0.
+by rewrite denote_lossy_ping onem_p1 ping_pong1.
 Qed.
 
 Lemma lossy_pings0 fuel :
@@ -628,7 +601,7 @@ Lemma lossy_pings0 fuel :
 Proof.
 move=> p0; have onem_p1 : p%:num.~%:i01 = 1%:i01.
   by apply: val_inj; rewrite /= p0 onem0.
-by rewrite denote_lossy_pings onem_p1 prob_monad_ping.ping_pongs1.
+by rewrite denote_lossy_pings onem_p1 ping_pongs1.
 Qed.
 
 Lemma lossy_ping_success_probability :
@@ -636,7 +609,7 @@ Lemma lossy_ping_success_probability :
   put empty_net >> bcoin (p_exchange_once p%:num.~%:i01).
 Proof.
 rewrite success_ofE -bindA denote_lossy_ping bindA -success_ofE.
-by rewrite -ping_pong_successE prob_monad_ping.ping_pong_success_probability.
+by rewrite -ping_pong_successE ping_pong_success_probability.
 Qed.
 
 Lemma lossy_ping_retry_success_probability fuel :
@@ -644,8 +617,7 @@ Lemma lossy_ping_retry_success_probability fuel :
   put empty_net >> bcoin (p_exchanges p%:num.~%:i01 fuel).
 Proof.
 rewrite success_ofE -bindA denote_lossy_pings bindA -success_ofE.
-rewrite -ping_pongs_successE.
-by rewrite prob_monad_ping.ping_pong_retry_success_probability.
+by rewrite -ping_pongs_successE ping_pong_retry_success_probability.
 Qed.
 
 Theorem lossy_ping_hoare_and_prob :
