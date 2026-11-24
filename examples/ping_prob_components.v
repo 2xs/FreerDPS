@@ -51,8 +51,18 @@ Definition network_step (ns : net_state) :
     forall X, NETWORK X -> X -> net_state :=
   fun X cmd _ => match cmd with DROP q => drop_queue q ns end.
 
+(** A queue may only lose the packet that was just put in it. *)
+Definition holds_packet (q : queue) (ns : net_state) : bool :=
+  match q with
+  | ToServer => serverQ ns == Some Ping
+  | ToClient => clientQ ns == Some Pong
+  end.
+
+Definition network_req (ns : net_state) : forall X, NETWORK X -> Prop :=
+  fun X cmd => match cmd with DROP q => holds_packet q ns end.
+
 Definition network_c : contract NETWORK net_state :=
-  make_contract network_step no_requirement no_promise.
+  make_contract network_step network_req no_promise.
 
 Lemma chan_inv_drop q ns : chan_inv ns -> chan_inv (drop_queue q ns).
 Proof. by case: q; case; split=> //; apply/eqP. Qed.
@@ -131,11 +141,12 @@ Section transmit_s.
 Context {Fx : effect} `{NETWORK ;; @FlipEff R -<< Fx} {M : freerMonad Fx}.
 Context (p : {prob R}) (q : queue).
 
-Lemma pre_transmit ns : pre (link_c |~ (transmit p q : M unit)) ns.
+Lemma pre_transmit ns :
+  holds_packet q ns -> pre (link_c |~ (transmit p q : M unit)) ns.
 Proof.
-rewrite freer_to_hoare_bindE freer_contract_right //.
+move=> queued; rewrite freer_to_hoare_bindE freer_contract_right //.
 split; first by rewrite pre_to_hoare_triggerP.
-move=> kept ? _; rewrite pre_to_hoare_whenP.
+move=> kept ? /post_to_hoare_triggerP [-> _]; rewrite pre_to_hoare_whenP.
 case: kept=> //=; rewrite freer_contract_left //.
 by rewrite pre_to_hoare_triggerP.
 Qed.
@@ -166,8 +177,9 @@ move=> inv; case: cmd=> /=; last first.
   by rewrite freer_contract_left //; exact: (pre_client ANSWER inv).
 rewrite freer_to_hoare_bindE freer_contract_left //; split.
   exact: (pre_client ASK inv).
-move=> _ ns1 _; rewrite freer_contract_right // freer_contract_prodT.
-exact: pre_transmit.
+move=> _ ns1 /send_run [_ sQ].
+rewrite freer_contract_right // freer_contract_prodT.
+by apply: pre_transmit; rewrite /= sQ serverQ_fill_serverQ.
 Qed.
 
 (** Each primitive of [lossy_client_c] preserves the channel invariant. *)
@@ -227,8 +239,9 @@ move=> [[]|] * /=; last 2 first.
 rewrite freer_to_hoare_bindE; split; last by move=> *; rewrite pre_ret.
 rewrite freer_to_hoare_bindE freer_contract_left //.
 split; first by rewrite reply_respect.
-move=> _ ns2 _; rewrite freer_contract_right // freer_contract_prodT.
-exact: pre_transmit.
+move=> _ ns2 /reply_run [cQ _].
+rewrite freer_contract_right // freer_contract_prodT.
+by apply: pre_transmit; rewrite /= cQ clientQ_fill_clientQ.
 Qed.
 
 (** Each primitive of [lossy_server_c] preserves the channel invariant. *)
