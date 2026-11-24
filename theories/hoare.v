@@ -417,6 +417,30 @@ by apply:hoare_ext=>* /=; apply: propext; tauto.
 Qed.
 End lift_shared_contract.
 
+Section shared_invariant.
+Context {Fx F E : effect} `{F ;; E -<< Fx} {S : Type} (inv : set S).
+Context (cf : contract F S) (ce : contract E S).
+
+(** A shared contract preserves an invariant as soon as both parts do. *)
+Lemma shared_preserves_invariant :
+  (forall X (cmd : F X), preserves_invariant inv (hoare_of_contract cf cmd)) ->
+  (forall X (cmd : E X), preserves_invariant inv (hoare_of_contract ce cmd)) ->
+  forall X (cmd : Fx X),
+    preserves_invariant inv (hoare_of_contract (cf -^- ce) cmd).
+Proof.
+move=> cf_ok ce_ok X cmd s x s' /=.
+rewrite /gen_requirement /gen_state_update /gen_promise /=.
+rewrite /gen_requirement /gen_promise.
+case: (prj (F:=F) cmd)=> [f|].
+  move=> [f_req _] [-> [f_prom _]].
+  by apply: (cf_ok _ f s x).
+case: (prj (F:=E) cmd)=> [e|]; last by move=> _ [->].
+move=> [_ e_req] [-> [_ e_prom]].
+by apply: (ce_ok _ e s x).
+Qed.
+
+End shared_invariant.
+
 #[export] Hint Extern 0 (providesOnlyF _) =>
   multimatch goal with
   | inner : ?F -< ?Fx |- @providesOnlyF _ ?Fx _ _ _ _ =>

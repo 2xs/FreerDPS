@@ -274,6 +274,16 @@ Instance distinguish_provideT
       (@provideT FX Fx G pg outer).(may_prov).
 Proof. by constructor=> A cmd /=; rewrite !injK_Some injK_None. Defined.
 
+(** Effects below the two children of a strict pair are distinguished:
+    [F] is under the left child [Fl], [G] under the right child [Fr]. *)
+Instance distinguish_strictT
+    (FX Fl Fr F G : effect)
+    (sp : Fl ;; Fr -<< FX) (pf : F -< Fl) (pg : G -< Fr) :
+    @Distinguish FX F G
+      (@provideT FX Fl F pf sp.(p1))
+      (@provideT FX Fr G pg sp.(p2)).(may_prov).
+Proof. by constructor=> A cmd /=; rewrite (@injK_None _ _ _ _ _ sp.(d1)). Defined.
+
 (** This one is not an instance because the typeclass
   * resolver would just loop wildly otherwise *)
 Definition strictProvideT
@@ -309,6 +319,41 @@ Ltac find_provideT_from_strict :=
 
 #[global] Hint Extern 500 (@StrictProvide2 _ _ _) =>
   find_strict_provideT : typeclass_instances.
+
+(** An effect inside the left child of a strict pair, paired with the right
+    child.  [strict_inner_left] keeps the left effect of [inner],
+    [strict_inner_right] its right effect.  Not instances, for the same
+    reason as [strictProvideT]. *)
+Definition strict_inner_left {FX Fx F G L : effect}
+    (inner : F ;; G -<< Fx) (outer : Fx ;; L -<< FX) : F ;; L -<< FX.
+Proof.
+refine {| p1 := @provideT FX Fx F inner.(p1) outer.(p1); p2 := outer.(p2) |}.
+  by constructor=> A cmd /=; exact: (@injK_None _ _ _ _ _ outer.(d1)).
+constructor=> A cmd /=.
+by rewrite (@injK_None _ _ _ _ _ outer.(d2)).
+Defined.
+
+Definition strict_inner_right {FX Fx F G L : effect}
+    (inner : F ;; G -<< Fx) (outer : Fx ;; L -<< FX) : G ;; L -<< FX.
+Proof.
+refine {| p1 := @provideT FX Fx G inner.(p2) outer.(p1); p2 := outer.(p2) |}.
+  by constructor=> A cmd /=; exact: (@injK_None _ _ _ _ _ outer.(d1)).
+constructor=> A cmd /=.
+by rewrite (@injK_None _ _ _ _ _ outer.(d2)).
+Defined.
+
+Ltac find_strict_inner :=
+  multimatch goal with
+  | outer : @StrictProvide2 ?FX ?Fx ?L, inner : @StrictProvide2 ?Fx ?F ?G
+      |- @StrictProvide2 ?FX ?F ?L =>
+      exact (@strict_inner_left FX Fx F G L inner outer)
+  | outer : @StrictProvide2 ?FX ?Fx ?L, inner : @StrictProvide2 ?Fx ?F ?G
+      |- @StrictProvide2 ?FX ?G ?L =>
+      exact (@strict_inner_right FX Fx F G L inner outer)
+  end.
+
+#[global] Hint Extern 500 (@StrictProvide2 _ _ _) =>
+  find_strict_inner : typeclass_instances.
 
 Inductive eempty : effect := .
 

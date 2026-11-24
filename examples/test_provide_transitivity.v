@@ -126,3 +126,29 @@ Proof. exact: _. Qed.
 Goal N20 -< Root.
 Proof. exact: _. Qed.
 End three_level_full_tree.
+
+(** A leaf of one child paired with its sibling: [strict_inner_left] and
+    [strict_inner_right]. *)
+Section inner_with_sibling.
+Variables F G L FG Root : effect.
+Context `{inner : F ;; G -<< FG}.
+Context `{outer : FG ;; L -<< Root}.
+
+Goal F ;; L -<< Root.
+Proof. exact: _. Qed.
+
+Goal G ;; L -<< Root.
+Proof. exact: _. Qed.
+End inner_with_sibling.
+
+(** Effects below the two children of a strict pair are distinguished:
+    [distinguish_strictT]. *)
+Section distinguish_across.
+Variables Fl Fr F G FX : effect.
+Context `{sp : Fl ;; Fr -<< FX} `{pf : F -< Fl} `{pg : G -< Fr}.
+
+Goal forall A (cmd : F A),
+  @prj FX G (@provideT FX Fr G pg sp.(p2)).(may_prov) _
+    (@inj FX F (@provideT FX Fl F pf sp.(p1)) _ cmd) = None.
+Proof. by move=> A cmd; exact: injK_None. Qed.
+End distinguish_across.
