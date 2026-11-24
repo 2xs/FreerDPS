@@ -5,7 +5,7 @@ From mathcomp Require Import ssreflect ssrfun ssrbool eqtype order.
 From mathcomp Require Import all_analysis.
 From infotheo Require Import convex fsdist realType_ext.
 From monae Require Import preamble hierarchy.
-From FreerDPS Require Import all_freerdps ping_common ping_client_serv_freespec.
+From FreerDPS Require Import all_freerdps ping_common ping_components.
 
 Local Open Scope proba_scope.
 Local Open Scope convex_scope.
