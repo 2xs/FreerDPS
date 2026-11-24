@@ -96,9 +96,9 @@ Context (p : {prob R}).
 
 Definition drop_packet (q : queue) : M unit := ptrigger (DROP q).
 
-(* previously : Ret (Some x) <|| p ||> Ret None *)
+(** The packet in [q] is lost with probability [p], kept with [1 - p]. *)
 Definition transmit (q : queue) : M unit :=
-  flip p >>= fun kept => when (~~ kept) (drop_packet q).
+  flip p >>= fun lost => when lost (drop_packet q).
 End transmit.
 
 Section link_syntax.
@@ -122,9 +122,9 @@ Lemma syn_transmit q :
   providesOnlyF (F := LinkF)
     (@transmit _ (@strictProvideT _ _ _ _ Hlink HL) M p q).
 Proof.
-exists (frBind (frTrigger (inj (flipe p))) (fun kept =>
-  if kept then frRet tt
-  else frBind (frTrigger (inj (DROP q))) (fun=> frRet tt))).
+exists (frBind (frTrigger (inj (flipe p))) (fun lost =>
+  if lost then frBind (frTrigger (inj (DROP q))) (fun=> frRet tt)
+  else frRet tt)).
 rewrite /= /transmit; congr (_ >>= _).
 by apply: funext=> -[].
 Qed.
@@ -146,8 +146,8 @@ Lemma pre_transmit ns :
 Proof.
 move=> queued; rewrite freer_to_hoare_bindE freer_contract_right //.
 split; first by rewrite pre_to_hoare_triggerP.
-move=> kept ? /post_to_hoare_triggerP [-> _]; rewrite pre_to_hoare_whenP.
-case: kept=> //=; rewrite freer_contract_left //.
+move=> lost ? /post_to_hoare_triggerP [-> _]; rewrite pre_to_hoare_whenP.
+case: lost=> //=; rewrite freer_contract_left //.
 by rewrite pre_to_hoare_triggerP.
 Qed.
 
@@ -386,7 +386,7 @@ Definition spec_client : CLIENT ~~> N :=
   fun _ cmd => match cmd in CLIENT T return N T with
   | ASK => get >>= fun s =>
       let s1 := fill_serverQ Ping s in
-      put s1 <| p |> put (drop_queue ToServer s1)
+      put (drop_queue ToServer s1) <| p |> put s1
   | ANSWER => get >>= fun s =>
       let answer := if clientQ s is Some Pong then GotPong else LostPong in
       put (consume_clientQ s) >> Ret answer
@@ -398,15 +398,17 @@ Definition spec_server : SERVER ~~> N :=
       let s0 := consume_serverQ s in
       if serverQ s is Some Ping then
         let s1 := fill_clientQ Pong s0 in
-        (put s1 <| p |> put (drop_queue ToClient s1)) >> Ret (Some tt)
+        (put (drop_queue ToClient s1) <| p |> put s1) >> Ret (Some tt)
       else put s0 >> Ret None
   end.
 
+(** A transmission succeeds with probability [1 - p]. *)
 Definition ref_ping_pong : ping_round ~~> N :=
   fun _ cmd => match cmd in ping_round T return N T with
-  | one_round => ping_pong (transmit := prob_monad_ping.transmit) p
+  | one_round =>
+      ping_pong (transmit := prob_monad_ping.transmit) p%:num.~%:i01
   | retry_round fuel =>
-      ping_pongs (transmit := prob_monad_ping.transmit) p fuel
+      ping_pongs (transmit := prob_monad_ping.transmit) p%:num.~%:i01 fuel
   end.
 
 End specs.
@@ -501,7 +503,7 @@ Context (M : inductiveFreerMonad ProtoF) (p : {prob R}).
 
 Lemma put_transmit s q :
   put s >> denote _ h _ (@transmit _ link_side M p q) =
-  put s <| p |> put (drop_queue q s).
+  put (drop_queue q s) <| p |> put s.
 Proof.
 rewrite /transmit denote_bind /flip /ptrigger denote_trigger h_flip /bcoin.
 rewrite choice_bindDl !bindretf !compE /when /= denote_ret choice_bindDr.
@@ -555,43 +557,35 @@ congr (_ >>= _).
   + by rewrite denote_ret.
 Qed.
 
-Lemma lossy_ping1 :
-  p = 1%:i01 ->
-  put empty_net >> denote _ h _ (lossy_ping one_round) =
-  put empty_net >> Ret GotPong.
-Proof.
-move=> p1; rewrite lossy_round_denote /round_of p1 !bindA.
-rewrite -bindA putgetput /= !choice1 -bindA putput.
-rewrite -bindA putgetput /= choice1 !bindA bindretf.
-by rewrite -bindA putput -bindA putgetput /= -bindA putput.
-Qed.
-
-Lemma lossy_pings1 fuel :
-  p = 1%:i01 ->
-  put empty_net >> denote _ h _ (lossy_ping (retry_round fuel)) =
-  put empty_net >> Ret GotPong.
-Proof.
-move=> p1; have := lossy_ping1 p1; rewrite lossy_round_denote.
-rewrite denote_retry lossy_round_denote.
-elim: fuel=> [|fuel IH] /= one; first exact: one.
-by rewrite -bindA one bindA bindretf.
-Qed.
+Remark consume_serverQ_twice s : consume_serverQ (consume_serverQ s) = consume_serverQ s.
+Proof. done. Qed.
+Remark consume_clientQ_twice s : consume_clientQ (consume_clientQ s) = consume_clientQ s.
+Proof. done. Qed.
+Remark consume_fill_serverQ m s : consume_serverQ (fill_serverQ m s) =  {| serverQ := None; clientQ := clientQ s |}.
+Proof. done. Qed.
+Remark consume_fill_clientQ m s : consume_clientQ (fill_clientQ m s) =  {| serverQ := serverQ s; clientQ := None |}.
+Proof. done. Qed.
+Remark consume_fill_serverQ_empty m : consume_serverQ (fill_serverQ m empty_net) = empty_net.
+Proof. done. Qed.
+Remark consume_fill_clientQ_empty m : consume_clientQ (fill_clientQ m empty_net) =  empty_net.
+Proof. done. Qed.
 
 Lemma lossy_ping_distribution :
   put empty_net >> denote _ h _ (lossy_ping one_round) =
-  put empty_net >> exchange_once (M := N) (choose := choice) p.
+  put empty_net >> exchange_once (M := N) (choose := choice) p%:num.~%:i01.
 Proof.
 rewrite lossy_round_denote /round_of /exchange_once /exchange !bindA.
-rewrite -bindA putgetput /= !choice_bindDl !choice_bindDr.
-rewrite -bindA putput -bindA putgetput /=.
+rewrite -bindA putgetput /= choiceC !choice_bindDl !choice_bindDr.
+rewrite -!bindA putput putgetput /= putput.
 rewrite !bindA !bindretf !choice_bindDl !choice_bindDr.
-do 2 rewrite -bindA putput -bindA putgetput -bindA putput /=.
-by rewrite -bindA putput -bindA putgetput /= !bindA !bindretf -bindA putput.
+do 2 rewrite -!bindA putput putgetput /= !putput 1?putgetput /=.
+rewrite !bindA !bindretf -bindA putput.
+by congr (_ <| _ |> _); exact: choiceC.
 Qed.
 
 Lemma lossy_pings_exchanges fuel :
   put empty_net >> denote _ h _ (lossy_ping (retry_round fuel)) =
-  put empty_net >> exchanges (M := N) (choose := choice) p fuel.
+  put empty_net >> exchanges (M := N) (choose := choice) p%:num.~%:i01 fuel.
 Proof.
 have := lossy_ping_distribution; rewrite lossy_round_denote.
 rewrite denote_retry lossy_round_denote; set round := round_of _ _ _.
@@ -602,21 +596,44 @@ Qed.
 
 Lemma denote_lossy_ping :
   put empty_net >> denote _ h _ (lossy_ping one_round) =
-  put empty_net >> ping_pong (transmit := prob_monad_ping.transmit) p.
+  put empty_net >>
+    ping_pong (transmit := prob_monad_ping.transmit) p%:num.~%:i01.
 Proof.
 by rewrite lossy_ping_distribution prob_monad_ping.ping_pong_distribution.
 Qed.
 
 Lemma denote_lossy_pings fuel :
   put empty_net >> denote _ h _ (lossy_ping (retry_round fuel)) =
-  put empty_net >> ping_pongs (transmit := prob_monad_ping.transmit) p fuel.
+  put empty_net >>
+    ping_pongs (transmit := prob_monad_ping.transmit) p%:num.~%:i01 fuel.
 Proof.
 by rewrite lossy_pings_exchanges prob_monad_ping.ping_pongs_exchanges.
 Qed.
 
+(** Without loss, the exchange always succeeds. *)
+Lemma lossy_ping0 :
+  p = 0%:i01 ->
+  put empty_net >> denote _ h _ (lossy_ping one_round) =
+  put empty_net >> Ret GotPong.
+Proof.
+move=> p0; have onem_p1 : p%:num.~%:i01 = 1%:i01.
+  by apply: val_inj; rewrite /= p0 onem0.
+by rewrite denote_lossy_ping onem_p1 prob_monad_ping.ping_pong1.
+Qed.
+
+Lemma lossy_pings0 fuel :
+  p = 0%:i01 ->
+  put empty_net >> denote _ h _ (lossy_ping (retry_round fuel)) =
+  put empty_net >> Ret GotPong.
+Proof.
+move=> p0; have onem_p1 : p%:num.~%:i01 = 1%:i01.
+  by apply: val_inj; rewrite /= p0 onem0.
+by rewrite denote_lossy_pings onem_p1 prob_monad_ping.ping_pongs1.
+Qed.
+
 Lemma lossy_ping_success_probability :
   put empty_net >> success_of (denote _ h _ (lossy_ping one_round)) =
-  put empty_net >> bcoin (p_exchange_once p).
+  put empty_net >> bcoin (p_exchange_once p%:num.~%:i01).
 Proof.
 rewrite success_ofE -bindA denote_lossy_ping bindA -success_ofE.
 by rewrite -ping_pong_successE prob_monad_ping.ping_pong_success_probability.
@@ -624,7 +641,7 @@ Qed.
 
 Lemma lossy_ping_retry_success_probability fuel :
   put empty_net >> success_of (denote _ h _ (lossy_ping (retry_round fuel))) =
-  put empty_net >> bcoin (p_exchanges p fuel).
+  put empty_net >> bcoin (p_exchanges p%:num.~%:i01 fuel).
 Proof.
 rewrite success_ofE -bindA denote_lossy_pings bindA -success_ofE.
 rewrite -ping_pongs_successE.

@@ -544,8 +544,9 @@ End proto_correct.
 
 (** * Probability of Success *)
 
-(**
-A ns transmission succeeds with probability [1 - p]. Packet losses are
+(** See [ping_prob_components.v] for the lossy version of these components.
+
+A transmission succeeds with probability [1 - p]. Packet losses are
 independent. For one round trip:
 
 <<
