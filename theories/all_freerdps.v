@@ -6,6 +6,7 @@
 
 From FreerDPS Require Export
   init
+  monae_extra
   effect
   freer
   free_choice
