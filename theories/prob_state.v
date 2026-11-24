@@ -9,7 +9,7 @@ From mathcomp Require Import unstable reals Rstruct.
 From infotheo Require Import realType_ext.
 From monae Require Import preamble hierarchy monad_lib proba_lib state_lib.
 From monae Require Import monad_transformer proba_model.
-From FreerDPS Require Import init effect freer free_choice contract.
+From FreerDPS Require Import init effect freer free_choice contract component.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -127,3 +127,21 @@ Arguments freer_to_prob {R Fx _ S M N} c res {A} p.
 
 (* TODO: Enable this when the contracts carry probabilities. *)
 (* Notation "c !~ p" := (freer_to_prob c p) (at level 60, no associativity).*)
+
+(** * Probabilistic correctness of a component *)
+
+(** The probabilistic counterpart of [correct_component]: from the state [s0],
+    running [compo] through the contract [c], with the results given by
+    [res], behaves like the reference protocol [ref_proto], command by
+    command. *)
+Section prob_correct_component.
+Context {R : realType} {Fin Fx : effect} `{HF : @FlipEff R -< Fx}.
+Context {S : UU0} {M : freerMonad Fx} {N : probDrStateMonad R S}.
+
+Definition prob_correct_component (compo : component (M := M) Fin Fx)
+    (c : contract Fx S) (res : S -> forall X, Fx X -> X) (s0 : S)
+    (ref_proto : Fin ~~> N) :=
+  forall T (cmd : Fin T),
+    put s0 >> freer_to_prob c res (compo T cmd) = put s0 >> ref_proto T cmd.
+
+End prob_correct_component.
