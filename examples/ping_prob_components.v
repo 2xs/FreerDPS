@@ -582,27 +582,6 @@ Proof.
 by rewrite lossy_pings_exchanges prob_monad_ping.ping_pongs_exchanges.
 Qed.
 
-(** Without loss, the exchange always succeeds. *)
-Lemma lossy_ping0 :
-  p = 0%:i01 ->
-  put empty_net >> denote _ h _ (lossy_ping one_round) =
-  put empty_net >> Ret GotPong.
-Proof.
-move=> p0; have onem_p1 : p%:num.~%:i01 = 1%:i01.
-- by apply: val_inj; rewrite /= p0 onem0.
-by rewrite denote_lossy_ping onem_p1 ping_pong1.
-Qed.
-
-Lemma lossy_pings0 fuel :
-  p = 0%:i01 ->
-  put empty_net >> denote _ h _ (lossy_ping (retry_round fuel)) =
-  put empty_net >> Ret GotPong.
-Proof.
-move=> p0; have onem_p1 : p%:num.~%:i01 = 1%:i01.
-  by apply: val_inj; rewrite /= p0 onem0.
-by rewrite denote_lossy_pings onem_p1 ping_pongs1.
-Qed.
-
 Lemma lossy_ping_success_probability :
   put empty_net >> success_of (denote _ h _ (lossy_ping one_round)) =
   put empty_net >> bcoin (p_exchange_once p%:num.~%:i01).
