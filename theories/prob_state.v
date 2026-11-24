@@ -26,7 +26,9 @@ Local Open Scope monae_scope.
 (* This relies on stateT embedding a probMonad. This way we don't need to     *)
 (* actually over engineer the laws of state + prob, nor a model.              *)
 (*                                                                            *)
-(* This also adds a dedicated handler to denote from freerMonad to probState  *)
+(* This also adds a dedicated handler to denote from freerMonad to probState. *)
+(*                                                                            *)
+(* `c !~ p` = freer_to_prob (c : contract Fx S) A (p : M A)                   *)
 (******************************************************************************)
 
 (* If we wanted to go for prob + state + nondet, we would rely on nondet's *)
@@ -112,3 +114,16 @@ Definition compliant :=
     promise c s cmd (res s cmd).
 
 End prob_handler.
+
+Section freer_to_prob.
+Context {R : realType} {Fx : effect} `{@FlipEff R -< Fx} {S : UU0}.
+Context {M : freerMonad Fx} {N : probDrStateMonad R S}.
+
+Definition freer_to_prob (c : contract Fx S) (res : S -> forall X, Fx X -> X)
+    A (p : M A) : N A :=
+  denote N (prob_handler c res) A p.
+End freer_to_prob.
+Arguments freer_to_prob {R Fx _ S M N} c res {A} p.
+
+(* TODO: Enable this when the contracts carry probabilities. *)
+(* Notation "c !~ p" := (freer_to_prob c p) (at level 60, no associativity).*)
