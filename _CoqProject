@@ -22,4 +22,5 @@
 ./examples/prob_monad_ping.v
 ./examples/freer_choice_ping.v
 ./examples/ping_components.v
+./examples/ping_prob_components.v
 ./examples/test_provide_transitivity.v

@@ -127,7 +127,10 @@ Proof. done. Qed.
 Opaque fill_serverQ fill_clientQ consume_clientQ consume_serverQ.
 
 Definition chan_inv ns := serverQ ns != Some Pong /\ clientQ ns != Some Ping.
-Lemma chan_inv_empty : chan_inv {| serverQ := None; clientQ := None |}.
+(** The network with both queues empty. *)
+Definition empty_net : net_state := {| serverQ := None; clientQ := None |}.
+
+Lemma chan_inv_empty : chan_inv empty_net.
 Proof. by split; apply/eqP. Qed.
 End NetworkChannelMod.
 
@@ -333,6 +336,8 @@ Qed.
 
 End c_inv_s.
 
+#[export] Hint Extern 0 (providesOnlyF answer) =>
+  solve [exact: (syn_client ANSWER)] : core.
 #[export] Hint Extern 0 (providesOnlyF (@client _ _ _ _ _)) =>
   solve [exact: syn_client] : core.
 
