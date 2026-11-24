@@ -5,6 +5,7 @@
 (* Copyright (C) 2018–2020 ANSSI *)
 
 From FreerDPS Require Import init effect freer contract hoare.
+From mathcomp Require Import ssreflect classical_sets.
 From monae Require Import hierarchy.
 
 (** * Definition *)
@@ -40,3 +41,32 @@ Definition correct_component {Fx Fin Fout : effect} `{Fout -<? Fx}
       post (cout |~ (compo T cmd : M _)) sout t sout' ->
       promise cin sin cmd t /\
       rel_inv (state_update cin sin cmd t) sout'.
+
+(** The two halves of [correct_component], for one command. *)
+Section correct_component_views.
+Context {Fx Fin Fout : effect} `{Fout -<? Fx} {M : freerMonad Fx}.
+Context {Sin Sout : Type} (compo : component (M := M) Fin Fx).
+Context (cin : contract Fin Sin) (cout : contract Fout Sout).
+Context (rel_inv : Sin -> Sout -> Prop).
+Hypothesis compo_ok : correct_component compo cin cout rel_inv.
+
+Local Open Scope classical_set_scope.
+
+Lemma correct_pre sin T (cmd : Fin T) :
+  requirement cin sin cmd -> rel_inv sin `<=` pre (cout |~ compo T cmd).
+Proof. by move=> req sout inv; case: (compo_ok sin sout inv T cmd req). Qed.
+
+Lemma correct_post sin sout T (cmd : Fin T) t sout' :
+  rel_inv sin sout -> requirement cin sin cmd ->
+  post (cout |~ compo T cmd) sout t sout' ->
+  promise cin sin cmd t /\ rel_inv (state_update cin sin cmd t) sout'.
+Proof.
+move=> inv req run.
+by case: (compo_ok sin sout inv T cmd req)=> _ /(_ t sout' run).
+Qed.
+
+End correct_component_views.
+Arguments correct_pre {Fx Fin Fout _ M Sin Sout compo cin cout rel_inv}
+  compo_ok sin {T} cmd.
+Arguments correct_post {Fx Fin Fout _ M Sin Sout compo cin cout rel_inv}
+  compo_ok {sin sout T cmd t sout'}.

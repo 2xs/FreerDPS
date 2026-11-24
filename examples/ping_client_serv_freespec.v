@@ -11,11 +11,21 @@ Local Open Scope monae_scope.
 Local Open Scope contract_scope.
 Local Open Scope classical_set_scope.
 Close Scope nat_scope.
-(** * Specifying the Ping-Pong Protocol *)
+
+(******************************************************************************)
+(* Interfaces :                                                               *)
+(*   client_api / server_api := describe what a socket does                   *)
+(*   CLIENT := interface of the client component.                             *)
+(*   SERVER := interface of the server component.                             *)
+(* Components :                                                               *)
+(*   client := client component, CLIENT on top of client_api                  *)
+(*   server := server component, SERVER on top of server_api                  *)
+(*   ping_with cl sv := the protocol built from a client and a server.        *)
+(*                      builds from the generic provided in ping_common.v.    *)
+(******************************************************************************)
+
 
 Module Export PingPongM.
-(** ** Client *)
-
 Inductive client_api : effect :=
 | SEND : msg -> client_api unit
 | WAIT : client_api (option msg).
@@ -24,11 +34,7 @@ Section client_program.
 Context {Fx : effect} `{client_api -< Fx} {M : freerMonad Fx}.
 Definition send : M unit := ptrigger $ SEND Ping.
 Definition wait : M (option msg) := ptrigger WAIT.
-Definition C : M (option msg) :=
-  send >>= fun=> wait.
 End client_program.
-
-(** ** Server *)
 
 Inductive server_api : effect :=
 | RPLY : msg -> server_api unit
@@ -47,24 +53,15 @@ Section syntax.
 Context {ProtoF : effect} {Hc: client_api -< ProtoF} {Hs: server_api -< ProtoF}.
 Context {M : freerMonad ProtoF}.
 
-Lemma syn_send : providesOnlyF (H:=Hc) (M := M) send.
+Fact syn_send : providesOnlyF (H:=Hc) (M := M) send.
 Proof. by exists (frTrigger (SEND Ping)). Qed.
-
-Lemma syn_wait : providesOnlyF (H:=Hc) (M := M) wait.
+Fact syn_wait : providesOnlyF (H:=Hc) (M := M) wait.
 Proof. by exists (frTrigger (inj $ WAIT)). Qed.
-
-Lemma syn_c : providesOnlyF (F:=client_api) (M := M) C.
-Proof.
-by exists (frBind (frTrigger (SEND Ping)) (fun=> frTrigger WAIT)).
-Qed.
-
-Lemma syn_reply : providesOnlyF (F:=server_api) (M := M) reply.
+Fact syn_reply : providesOnlyF (F:=server_api) (M := M) reply.
 Proof. by exists (frTrigger (RPLY Pong)). Qed.
-
-Lemma syn_recv : providesOnlyF (F:=server_api) (M := M) recv.
+Fact syn_recv : providesOnlyF (F:=server_api) (M := M) recv.
 Proof. by exists (frTrigger RECV). Qed.
-
-Lemma syn_s_p : providesOnlyF (F:=server_api) (M := M) S_p.
+Fact syn_s_p : providesOnlyF (F:=server_api) (M := M) S_p.
 Proof.
 exists
   (frBind (frTrigger RECV)
@@ -82,20 +79,16 @@ End syntax.
   solve [exact: syn_send] : core.
 #[export] Hint Extern 0 (providesOnlyF wait) =>
   solve [exact: syn_wait] : core.
-#[export] Hint Extern 0 (providesOnlyF C) =>
-  solve [exact: syn_c] : core.
 #[export] Hint Extern 0 (providesOnlyF reply) =>
   solve [exact: syn_reply] : core.
 #[export] Hint Extern 0 (providesOnlyF recv) =>
   solve [exact: syn_recv] : core.
 #[export] Hint Extern 0 (providesOnlyF S_p) =>
   solve [exact: syn_s_p] : core.
-
 End PingSyntax.
 
 Module NetworkChannelMod.
 Definition packet := option msg.
-
 HB.instance Definition _ := gen_eqMixin packet.
 HB.instance Definition _ := gen_choiceMixin packet.
 
@@ -103,7 +96,6 @@ Record net_state := mk_chan {
   serverQ : packet;
   clientQ : packet;
 }.
-
 HB.instance Definition _ := gen_eqMixin net_state.
 HB.instance Definition _ := gen_choiceMixin net_state.
 
@@ -116,45 +108,33 @@ Definition fill_clientQ m ns := {| serverQ := serverQ ns; clientQ := Some m |}.
 Definition consume_clientQ ns := {| serverQ := serverQ ns; clientQ := None |}.
 Definition consume_serverQ ns := {| serverQ := None; clientQ := clientQ ns |}.
 
-Fact serverQ_fill_serverQ m ns : serverQ (fill_serverQ m ns) = Some m.
+Remark serverQ_fill_serverQ m ns : serverQ (fill_serverQ m ns) = Some m.
 Proof. done. Qed.
-
-Fact clientQ_fill_serverQ m ns : clientQ (fill_serverQ m ns) = clientQ ns.
+Remark clientQ_fill_serverQ m ns : clientQ (fill_serverQ m ns) = clientQ ns.
 Proof. done. Qed.
-
-Fact clientQ_fill_clientQ m ns : clientQ (fill_clientQ m ns) = Some m.
+Remark clientQ_fill_clientQ m ns : clientQ (fill_clientQ m ns) = Some m.
 Proof. done. Qed.
-
-Fact serverQ_fill_clientQ m ns : serverQ (fill_clientQ m ns) = serverQ ns.
+Remark serverQ_fill_clientQ m ns : serverQ (fill_clientQ m ns) = serverQ ns.
 Proof. done. Qed.
-
-Fact clientQ_consume_clientQ ns : clientQ (consume_clientQ ns) = None.
+Remark clientQ_consume_clientQ ns : clientQ (consume_clientQ ns) = None.
 Proof. done. Qed.
-
-Fact serverQ_consume_clientQ ns : serverQ (consume_clientQ ns) = serverQ ns.
+Remark serverQ_consume_clientQ ns : serverQ (consume_clientQ ns) = serverQ ns.
 Proof. done. Qed.
-
-Fact serverQ_consume_serverQ ns : serverQ (consume_serverQ ns) = None.
+Remark serverQ_consume_serverQ ns : serverQ (consume_serverQ ns) = None.
 Proof. done. Qed.
-
-Fact clientQ_consume_serverQ ns : clientQ (consume_serverQ ns) = clientQ ns.
+Remark clientQ_consume_serverQ ns : clientQ (consume_serverQ ns) = clientQ ns.
 Proof. done. Qed.
-
 Opaque fill_serverQ fill_clientQ consume_clientQ consume_serverQ.
 
 Definition chan_inv ns := serverQ ns != Some Pong /\ clientQ ns != Some Ping.
-
 Lemma chan_inv_empty : chan_inv {| serverQ := None; clientQ := None |}.
 Proof. by split; apply/eqP. Qed.
-
 End NetworkChannelMod.
 
 Import NetworkChannelMod.
 Local Open Scope nat_scope.
 
-(** ** Client Specification *)
 Module ccm.
-
 Definition c_step ns : forall X, client_api X -> X -> net_state
   := fun X cmd result => match cmd with
 | SEND p => fill_serverQ p ns
@@ -178,7 +158,6 @@ Definition client_c : contract client_api net_state :=
 
 Section client_respectful_and_run_lemmas.
 Context {Fx : effect} `{client_api -< Fx} {M : freerMonad Fx}.
-
 Lemma send_respect :
   pre (client_c |~ (send : M _)) = [set: _].
 Proof. by rewrite -subTset=>? _; exact/pre_to_hoare_triggerP/eqxx. Qed.
@@ -197,34 +176,10 @@ Lemma wait_run (s s' : net_state) p
 clientQ s' = None /\ serverQ s' = serverQ s.
 Proof. by move: run=> /post_to_hoare_triggerP=> -[] ->. Qed.
 
-Lemma c_respect :
-pre (client_c |~ (C : M _)) = [set n | clientQ n != Some Ping].
-Proof.
-apply/seteqP; rewrite freer_to_hoare_bindE; split=>[ ns [] | ns /= Hy].
-- rewrite send_respect wait_respect=> /= ? /(_ tt (fill_serverQ Ping ns)) -> //.
-  exact/post_to_hoare_triggerP.
-- split; first by rewrite send_respect.
-  move=> [] s=> /send_run=> -[Hc _].
-  by rewrite wait_respect /= Hc.
-Qed.
-
-Lemma c_run (s s' : net_state) (p : option msg)
-  (run : post (client_c |~ (C : M _)) s p s') :
-clientQ s' = None /\ serverQ s' = serverQ (fill_serverQ Ping s).
-Proof.
-move: run; rewrite freer_to_hoare_bindE.
-case=> [[]] [[sQ cQ]] [] /send_run; case=>/= -> ->.
-by move/wait_run.
-Qed.
-
 End client_respectful_and_run_lemmas.
-
 End ccm.
 
-(** ** Server Specification *)
-
 Module scm.
-
 Definition server_step ns : forall X, server_api X -> X -> net_state
   := fun X cmd result => match cmd with
 | RPLY p => fill_clientQ p ns
@@ -298,146 +253,211 @@ End scm.
 Import ccm scm.
 
 (** * Protocol Description :
-       +---+  == send Ping ==>  +-----------+  == delvr Ping ==>  +---+
-       | C |                    | net_state |                     | S |
-       +---+  <== get Pong ==   +-----------+  <== reply Pong ==  +---+
+      +---+  === (1) send Ping ==> +-----------+  === delvr Ping ==>  +---+
+      | C |                        | net_state |                      | S | (2)
+      +---+  <== (3) get Pong ===  +-----------+  <== reply Pong ===  +---+
 *)
-Section retry.
-Context {Fx Fout : effect} `{Fout -<? Fx} {M : freerMonad Fx}.
-Context (c : contract Fout net_state) (run : M outcome).
-
-Lemma pre_retry_ping_pong fuel :
-  pre (c |~ run) = [set: _] ->
-  pre (c |~ retry_until success_event run fuel) = [set: _].
-Proof.
-rewrite -!subTset=> Hpre; elim: fuel=> [|fuel IH] *; first exact: Hpre.
-rewrite freer_to_hoare_bindE; split=> [|result s _]; first exact: Hpre.
-by case: result; [by rewrite pre_ret | have ? := Hpre s; exact: IH ..].
-Qed.
-
-End retry.
-
-Module ProtocolM.
-Section proto_s.
 
 Inductive ping_round : effect :=
 | one_round : ping_round outcome
 | retry_round : nat -> ping_round outcome.
 
-Context {ProtoF : effect}.
-Context `{client_api ;; server_api -<< ProtoF}.
-Context {M : freerMonad ProtoF}.
+Definition ping_contract {ProtoF : effect}
+    `{client_api ;; server_api -<< ProtoF} : contract ProtoF net_state :=
+  client_c -^- server_c.
 
-(** One round, built from the non-probabilistic skeleton. *)
-Definition ping_pong : M outcome :=
-  round_of send (fun=> S_p) (answer_of (fun=> wait)).
+Inductive CLIENT : effect :=
+| ASK : CLIENT unit
+| ANSWER : CLIENT outcome.
 
-Definition ping_pongs (fuel : nat) : M outcome :=
-  retry_until success_event ping_pong fuel.
+Inductive SERVER : effect :=
+| SERVE : SERVER (option unit).
 
-Definition ping_protocol : component (M:=M) ping_round ProtoF :=
+Section c_s.
+Context {Fx : effect} `{client_api -< Fx} {M : freerMonad Fx}.
+
+Definition answer : M outcome := answer_of (fun=> wait) tt.
+
+Definition client : component (M := M) CLIENT Fx :=
   fun _ cmd => match cmd with
-    | one_round => ping_pong
-    | retry_round fuel => ping_pongs fuel
-    end.
+  | ASK => send
+  | ANSWER => answer
+  end.
 
-Definition ping_contract : contract ProtoF net_state := client_c -^- server_c.
-
-Lemma pre_ping_pong : pre (ping_contract |~ ping_pong) = [set: _].
+Lemma syn_client T (cmd : CLIENT T) :
+  providesOnlyF (F := client_api) (client cmd).
 Proof.
-rewrite /ping_pong /round_of /answer_of bindA -subTset=>??.
-rewrite freer_to_hoare_bindE freer_contract_left //=; split;
-  first by rewrite send_respect.
-case=> [] [s1 c1] /send_run /= [-> ->].
-rewrite freer_to_hoare_bindE freer_contract_right //; split;
-  first by rewrite s_p_respect; exact/eqP.
-move=> [[]|] [s2 c2] /s_p_run /= [-> ->]; last by rewrite pre_ret.
-+ rewrite freer_to_hoare_bindE freer_contract_left //=; split;
-    first by rewrite wait_respect; exact/eqP.
-  by move=> [[]|] [s3 c3] /wait_run /= [-> ->]; rewrite pre_ret.
+case: cmd; first exact: syn_send.
+exists (frBind (frTrigger WAIT) (fun reply =>
+  if reply is Some Pong then frRet GotPong else frRet LostPong)).
+rewrite /= /answer /answer_of; congr (wait >>= _).
+by apply: funext=> -[[]|].
 Qed.
 
-Lemma pre_ping_any_cmd T (cmd : ping_round T) :
-  pre (ping_contract |~ ping_protocol cmd) = [set: _].
+Lemma pre_client T (cmd : CLIENT T) ns :
+  chan_inv ns -> pre (client_c |~ client cmd) ns.
 Proof.
-by case: cmd=> [|?];
-  last apply: pre_retry_ping_pong;
-  exact: pre_ping_pong.
+case: cmd=> [_ /=|[_ cQ_ok] /=]; first by rewrite send_respect.
+rewrite /answer /answer_of freer_to_hoare_bindE; split.
+- by rewrite wait_respect.
+- by case=>[[]|]; rewrite pre_ret.
 Qed.
 
-Lemma ping_handler_preserves_inv X (cmd : ProtoF X) :
-  preserves_invariant chan_inv (hoare_of_contract ping_contract cmd).
+Lemma client_handler_preserves_inv X (cmd : Fx X) :
+  preserves_invariant chan_inv (hoare_of_contract client_c cmd).
 Proof.
-move=> s r s' /=.
-do 2 rewrite /gen_requirement /gen_state_update /gen_promise /=.
-case: (prj (F:=client_api) cmd)=> [c_cmd|].
-- move=> [+ _] [-> _] [sQ_ok cQ_ok]; clear cmd.
-  by case: c_cmd r=> [m|] r /= => [/eqP ->|]; split=>//; exact/eqP.
-case: (prj (F:=server_api) cmd)=> [s_cmd| _]/=; last by case=> ->.
-move=> [_ +] [-> _] [sQ_ok cQ_ok]; clear cmd.
+move=> s r s' /=; rewrite /gen_requirement /gen_state_update /gen_promise.
+case: (prj cmd)=> [c_cmd|]; last by move=> _ [->].
+move=> + [-> _] [??]; clear cmd.
+by case: c_cmd r => [m|] r=> [/eqP -> |]; split=>//; exact/eqP.
+Qed.
+End c_s.
+
+Section c_inv_s.
+Context {Fx : effect} `{client_api -< Fx} {M : inductiveFreerMonad Fx}.
+
+Lemma client_run_preserves_inv A (p : M A) :
+  preserves_invariant chan_inv (client_c |~ p).
+Proof.
+by apply: to_hoare_preserves_invariant=> *; exact: client_handler_preserves_inv.
+Qed.
+
+Theorem client_correct :
+  correct_component (client (M := M)) (no_contract CLIENT) client_c
+    (fun=> chan_inv).
+Proof.
+move=> ? ns inv ? cmd _; split; first exact: pre_client.
+move=> t ns' run; split=> //.
+by apply: (client_run_preserves_inv _ run inv); exact: pre_client.
+Qed.
+
+End c_inv_s.
+
+#[local] Hint Extern 0 (providesOnlyF answer) =>
+  solve [exact: (syn_client ANSWER)] : core.
+
+Section s_s.
+Context {Fx : effect} `{server_api -< Fx} {M : freerMonad Fx}.
+
+Definition server : component (M := M) SERVER Fx :=
+  fun _ cmd => match cmd with
+  | SERVE => S_p
+  end.
+
+Lemma syn_server T (cmd : SERVER T) :
+  providesOnlyF (F := server_api) (server cmd).
+Proof. by case: cmd; exact: syn_s_p. Qed.
+
+Lemma pre_server T (cmd : SERVER T) ns :
+  chan_inv ns -> pre (server_c |~ server cmd) ns.
+Proof. by case: cmd; case; rewrite s_p_respect. Qed.
+
+Lemma server_handler_preserves_inv X (cmd : Fx X) :
+  preserves_invariant chan_inv (hoare_of_contract server_c cmd).
+Proof.
+move=> s r s' /=; rewrite /gen_requirement /gen_state_update /gen_promise.
+case: (prj cmd)=> [s_cmd|]; last by move=> _ [->].
+move=> + [-> _] [??]; clear cmd.
 by case: s_cmd r=> [m|] r /= => [/eqP ->|]; split=> //; exact/eqP.
 Qed.
+End s_s.
 
+Section s_inv_s.
+Context {Fx : effect} `{server_api -< Fx} {M : inductiveFreerMonad Fx}.
 
-Definition ping_inv ns := ns = {| serverQ := None; clientQ := None|}.
-
-Lemma post_ping_pong n r n' :
-  ping_inv n -> post (ping_contract |~ ping_pong) n r n' -> ping_inv n'.
+Lemma server_run_preserves_inv A (p : M A) :
+  preserves_invariant chan_inv (server_c |~ p).
 Proof.
-move=> ->; rewrite /ping_pong /round_of  bindA.
-rewrite freer_to_hoare_bindE freer_contract_left //.
-case=> -[] [[s1 c1]] [] /send_run /= [-> ->].
-rewrite freer_to_hoare_bindE freer_contract_right //.
-case=> [[[]|]] [[s2 c2]] [] /s_p_run /= [-> ->];
-  last by rewrite post_ret=> -[_ <-].
-rewrite freer_to_hoare_bindE freer_contract_left //.
-case=> o [[s3 c3]] [] /wait_run /= [-> ->].
-by case: o=> [[]|]; rewrite post_ret=> -[_ <-].
+by apply: to_hoare_preserves_invariant=> *; exact: server_handler_preserves_inv.
 Qed.
 
-Lemma post_ping_pongs n r n' fuel :
-  ping_inv n -> post (ping_contract |~ ping_pongs fuel) n r n' -> ping_inv n'.
+Theorem server_correct :
+  correct_component (server (M := M)) (no_contract SERVER) server_c
+    (fun=> chan_inv).
 Proof.
-elim: fuel n=> [|fuel IH] n n_inv; first exact: post_ping_pong.
+move=> ? ns inv ? cmd _; split; first exact: pre_server.
+move=> t ns' run; split=> //.
+by apply: (server_run_preserves_inv _ run inv); exact: pre_server.
+Qed.
+End s_inv_s.
+
+Section proto_s.
+Context {Fx Fout : effect} `{Fout -<? Fx} {M : freerMonad Fx}.
+
+(* here we use `round_of` because we don't have `transmit`. *)
+Definition round_with (cl : component (M := M) CLIENT Fx)
+    (sv : component (M := M) SERVER Fx) : M outcome :=
+  round_of (cl _ ASK) (fun=> sv _ SERVE) (fun=> cl _ ANSWER).
+
+(* as this is a loop, we prove it over any program *)
+Lemma retry_ping_pong_ok (c : contract Fout net_state) (run : M outcome) :
+  (forall ns, chan_inv ns -> pre (c |~ run) ns
+    /\ forall t ns', post (c |~ run) ns t ns' -> chan_inv ns') ->
+  forall fuel ns, chan_inv ns -> pre (c |~ retry_ping_pong run fuel) ns
+    /\ forall t ns', post (c |~ retry_ping_pong run fuel) ns t ns' ->
+  chan_inv ns'.
+Proof.
+move=> run_ok; elim=> [|fuel IH] ns inv /=; first exact: run_ok.
+have [run_pre run_post] := run_ok ns inv.
+rewrite freer_to_hoare_bindE; split.
+- split=> // result ns1 /run_post inv1.
+  by case: result; [rewrite pre_ret | exact: (IH ns1 inv1).1 ..].
+- move=> t ns' [result [ns1 [/run_post inv1]]].
+  by case: result; [rewrite post_ret=> -[_ <-] | exact: (IH ns1 inv1).2 ..].
+Qed.
+
+Definition ping_with (cl : component (M := M) CLIENT Fx)
+    (sv : component (M := M) SERVER Fx) :
+  component (M := M) ping_round Fx :=
+  fun _ cmd => match cmd with
+  | one_round => round_with cl sv
+  | retry_round fuel => retry_ping_pong (round_with cl sv) fuel
+  end.
+
+(** One round keeps the channel invariant as soon as both components do. *)
+Lemma round_with_ok (cl : component (M := M) CLIENT Fx)
+    (sv : component (M := M) SERVER Fx) (c : contract Fout net_state) :
+  correct_component cl (no_contract CLIENT) c (fun=> chan_inv) ->
+  correct_component sv (no_contract SERVER) c (fun=> chan_inv) ->
+  forall ns, chan_inv ns ->
+    pre (c |~ round_with cl sv) ns /\
+    forall t ns', post (c |~ round_with cl sv) ns t ns' -> chan_inv ns'.
+Proof.
+move=> cl_ok sv_ok ns inv; rewrite /round_with /round_of bindA; split.
+- rewrite freer_to_hoare_bindE; split;
+    first by exact: (correct_pre cl_ok).
+  move=> _ ns1 /(correct_post (sin := tt) cl_ok inv I) [_ inv1].
+  rewrite freer_to_hoare_bindE; split;
+    first by exact: (correct_pre sv_ok).
+  move=> served ns2 /(correct_post (sin := tt) sv_ok inv1 I) [_ inv2].
+  case: served=> [[]|]; last by rewrite pre_ret.
+  exact: (correct_pre cl_ok).
+move=> result ns'; rewrite freer_to_hoare_bindE.
+case=> _ [ns1] [/(correct_post (sin := tt) cl_ok inv I) [_ inv1]].
 rewrite freer_to_hoare_bindE.
-case=> r1 [s1] [].
-move=>/(post_ping_pong n_inv) -> /=.
-by case: (success_event r1); [rewrite post_ret=> -[_ <-] | exact: IH].
+case=> served [ns2] [/(correct_post (sin := tt) sv_ok inv1 I) [_ inv2]].
+case: served=> [[]|]; last by rewrite post_ret=> -[_ <-].
+by case/(correct_post (sin := tt) cl_ok inv2 I).
+Unshelve.
+all: done.
 Qed.
 
-Lemma post_ping_proto T n r n' (cmd : ping_round T) :
-  ping_inv n -> post (ping_contract |~ ping_protocol cmd) n r n' -> ping_inv n'.
+Theorem ping_with_correct (cl : component (M := M) CLIENT Fx)
+    (sv : component (M := M) SERVER Fx) (c : contract Fout net_state) :
+  correct_component cl (no_contract CLIENT) c (fun=> chan_inv) ->
+  correct_component sv (no_contract SERVER) c (fun=> chan_inv) ->
+  correct_component (ping_with cl sv) (no_contract ping_round) c
+    (fun=> chan_inv).
 Proof.
-case: cmd r=>[| fuel] r.
-- exact: post_ping_pong.
-- exact: post_ping_pongs.
+move=> cl_ok sv_ok ?? inv _ [|fuel] _ /=.
+  have [round_pre round_post] := round_with_ok cl_ok sv_ok inv.
+  by split=> // t ns' /round_post.
+have [retry_pre retry_post] :=
+  retry_ping_pong_ok (round_with_ok cl_ok sv_ok) fuel inv.
+by split=> // t ns' /retry_post.
 Qed.
+
 End proto_s.
-
-Section proto_inv.
-Context {ProtoF : effect}.
-Context `{client_api ;; server_api -<< ProtoF}.
-Context {M : inductiveFreerMonad ProtoF}.
-
-Lemma ping_run_preserves_inv A (p : M A) :
-  preserves_invariant chan_inv (ping_contract |~ p).
-Proof.
-by apply: to_hoare_preserves_invariant=> *; exact: ping_handler_preserves_inv.
-Qed.
-
-Theorem ping_correct :
-  correct_component (ping_protocol (M := M)) (no_contract ping_round)
-    ping_contract (fun _ ns => chan_inv ns /\ ping_inv ns).
-Proof.
-move=> [] n [cinv pinv] X cmd []; split=> [| x n' run].
-  by rewrite pre_ping_any_cmd.
-split=> //; split.
-- by move: run cinv; apply: ping_run_preserves_inv; rewrite pre_ping_any_cmd.
-- exact/post_ping_proto/run/pinv.
-Qed.
-
-End proto_inv.
-End ProtocolM.
 
 (** * Probability of Success *)
 
