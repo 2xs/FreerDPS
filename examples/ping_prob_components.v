@@ -4,7 +4,6 @@ From mathcomp Require Import interval_inference.
 From mathcomp Require Import unstable reals Rstruct classical_sets.
 From infotheo Require Import realType_ext.
 From monae Require Import preamble hierarchy monad_lib proba_lib state_lib.
-From monae Require Import monad_transformer proba_model.
 From FreerDPS Require Import all_freerdps ping_common ping_components.
 From FreerDPS Require Import prob_state.
 From FreerDPS Require Import prob_monad_ping.
