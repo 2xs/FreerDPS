@@ -312,7 +312,8 @@ Context {Fx Fout : effect} `{Fout -<? Fx} {M : freerMonad Fx}.
 Context (c : contract Fout net_state) (run : M outcome).
 
 Lemma pre_retry_ping_pong fuel :
-  pre (c |~ run) = [set: _] -> pre (c |~ retry_ping_pong run fuel) = [set: _].
+  pre (c |~ run) = [set: _] ->
+  pre (c |~ retry_until success_event run fuel) = [set: _].
 Proof.
 rewrite -!subTset=> Hpre; elim: fuel=> [|fuel IH] ns //= ?.
 - exact: Hpre.
@@ -342,7 +343,7 @@ Definition ping_pong : M outcome :=
 
 (** Retrying [ping_pong], as [ping_pongs_with] does. *)
 Definition ping_pongs (fuel : nat) : M outcome :=
-  retry_ping_pong ping_pong fuel.
+  retry_until success_event ping_pong fuel.
 
 Definition ping_protocol : component (M:=M) ping_round ProtoF :=
   fun _ cmd => match cmd with

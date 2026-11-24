@@ -3,6 +3,7 @@ From mathcomp Require Import ssrnum ssralg reals.
 From infotheo Require Import realType_ext.
 From monae Require Import preamble hierarchy.
 From HB Require Import structures.
+From FreerDPS Require Import monae_extra.
 
 Import GRing.Theory.
 
@@ -15,6 +16,13 @@ Inductive msg := Ping | Pong.
 HB.instance Definition _ := gen_eqMixin msg.
 Inductive outcome := GotPong | LostPing | LostPong.
 HB.instance Definition _ := gen_eqMixin outcome.
+
+Definition success_event : pred outcome := fun result =>
+  if result is GotPong then true else false.
+
+Lemma success_eventE result :
+  success_event result = if result is GotPong then true else false.
+Proof. by case: result. Qed.
 
 Section syntactic_sugar_for_probabilities.
 Context {R : realType}.
@@ -58,13 +66,6 @@ Section ping_pong_protocol.
 Context {R : realType} {M : monad}.
 Implicit Types (m : msg) (psucc : {prob R}).
 
-Fixpoint retry_ping_pong (run : M outcome) (fuel : nat) : M outcome :=
-  if fuel is fuel'.+1 then
-    run >>= fun result =>
-      if result is GotPong then Ret GotPong else retry_ping_pong run fuel'
-  else
-    run.
-
 Section no_prob.
 Context {A B C : Type}.
 
@@ -104,7 +105,13 @@ Definition ping_pong_with psucc : M outcome :=
   round_of (client_send psucc) (server_reply psucc) client_receive.
 
 Definition ping_pongs_with psucc (fuel : nat) : M outcome :=
-  retry_ping_pong (ping_pong_with psucc) fuel.
+  retry_until success_event (ping_pong_with psucc) fuel.
+
+Lemma ping_pongs_withSE psucc fuel :
+  ping_pongs_with psucc fuel.+1 =
+    ping_pong_with psucc >>= fun result =>
+      if result is GotPong then Ret GotPong else ping_pongs_with psucc fuel.
+Proof. by congr (_ >>= _); apply: boolp.funext=> -[]. Qed.
 
 Lemma ping_pongs_withE psucc fuel :
   ping_pongs_with psucc fuel =
@@ -113,13 +120,7 @@ Lemma ping_pongs_withE psucc fuel :
         if result is GotPong then Ret GotPong else ping_pongs_with psucc fuel'
     else
       ping_pong_with psucc.
-Proof. by case: fuel. Qed.
-
-Lemma ping_pongs_withSE psucc fuel :
-  ping_pongs_with psucc fuel.+1 =
-    ping_pong_with psucc >>= fun result =>
-      if result is GotPong then Ret GotPong else ping_pongs_with psucc fuel.
-Proof. by []. Qed.
+Proof. by case: fuel=> // fuel; exact: ping_pongs_withSE. Qed.
 
 End custom_protocol.
 End ping_pong_protocol.
@@ -161,16 +162,13 @@ Lemma ping_pongsE psucc fuel :
         if result is GotPong then Ret GotPong else ping_pongs psucc fuel'
     else
       ping_pong psucc.
-Proof. by case: fuel. Qed.
+Proof. by case: fuel=> // fuel; exact: ping_pongs_withSE. Qed.
 
 Lemma ping_pongsSE psucc fuel :
   ping_pongs psucc fuel.+1 =
     ping_pong psucc >>= fun result =>
       if result is GotPong then Ret GotPong else ping_pongs psucc fuel.
-Proof. by []. Qed.
-
-Definition success_event : pred outcome := fun result =>
-  if result is GotPong then true else false.
+Proof. exact: ping_pongs_withSE. Qed.
 
 Definition success_of (run : M outcome) : M bool :=
   run >>= fun result => Ret (success_event result).
@@ -179,10 +177,6 @@ Definition ping_pong_success p : M bool := success_of (ping_pong p).
 
 Definition ping_pongs_success p fuel : M bool :=
   success_of (ping_pongs p fuel).
-
-Lemma success_eventE result :
-  success_event result = if result is GotPong then true else false.
-Proof. by case: result. Qed.
 
 Lemma success_ofE run :
   success_of run = (run >>= fun result => Ret (success_event result)).
