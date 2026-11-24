@@ -393,8 +393,9 @@ Definition round_with (cl : component (M := M) CLIENT Fx)
 Lemma retry_ping_pong_ok (c : contract Fout net_state) (run : M outcome) :
   (forall ns, chan_inv ns -> pre (c |~ run) ns
     /\ forall t ns', post (c |~ run) ns t ns' -> chan_inv ns') ->
-  forall fuel ns, chan_inv ns -> pre (c |~ retry_ping_pong run fuel) ns
-    /\ forall t ns', post (c |~ retry_ping_pong run fuel) ns t ns' ->
+  forall fuel ns, chan_inv ns ->
+    pre (c |~ retry_until success_event run fuel) ns
+    /\ forall t ns', post (c |~ retry_until success_event run fuel) ns t ns' ->
   chan_inv ns'.
 Proof.
 move=> run_ok; elim=> [|fuel IH] ns inv /=; first exact: run_ok.
@@ -411,7 +412,7 @@ Definition ping_with (cl : component (M := M) CLIENT Fx)
   component (M := M) ping_round Fx :=
   fun _ cmd => match cmd with
   | one_round => round_with cl sv
-  | retry_round fuel => retry_ping_pong (round_with cl sv) fuel
+  | retry_round fuel => retry_until success_event (round_with cl sv) fuel
   end.
 
 (** One round keeps the channel invariant as soon as both components do. *)
