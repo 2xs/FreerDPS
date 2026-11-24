@@ -9,6 +9,7 @@ From mathcomp Require Import unstable reals Rstruct.
 From infotheo Require Import realType_ext.
 From monae Require Import preamble hierarchy monad_lib proba_lib state_lib.
 From monae Require Import monad_transformer proba_model.
+From FreerDPS Require Import init effect freer free_choice contract.
 
 Set Implicit Arguments.
 Unset Strict Implicit.
@@ -24,6 +25,8 @@ Local Open Scope monae_scope.
 (*                                                                            *)
 (* This relies on stateT embedding a probMonad. This way we don't need to     *)
 (* actually over engineer the laws of state + prob, nor a model.              *)
+(*                                                                            *)
+(* This also adds a dedicated handler to denote from freerMonad to probState  *)
 (******************************************************************************)
 
 (* If we wanted to go for prob + state + nondet, we would rely on nondet's *)
@@ -79,3 +82,33 @@ HB.instance Definition _ := isMonadConvexDr.Build R (MS S N) bindDr.
 End prob_state_model.
 End ProbStateModel.
 HB.export ProbStateModel.
+
+Section prob_handler.
+Context {R : realType} {Fx : effect} `{HF : @FlipEff R -< Fx} {S : UU0}.
+Context {N : probDrStateMonad R S}.
+Variables (c : contract Fx S) (res : S -> forall X, Fx X -> X).
+
+Definition store_op X (cmd : Fx X) : N X :=
+  get >>= fun s =>
+    let t := res s cmd in put (state_update c s cmd t) >> Ret t.
+
+Definition prob_handler : Fx ~~> N :=
+  fun X cmd => match prj (F := @FlipEff R) cmd with
+  | Some f => match f in FlipEff Y return N Y with
+              | flipe q => bcoin q
+              end
+  | None => store_op cmd
+  end.
+
+Lemma prob_handler_flip q : prob_handler (inj (flipe q)) = bcoin q.
+Proof. by rewrite /prob_handler injK_Some. Qed.
+
+Lemma prob_handler_store X (cmd : Fx X) :
+  prj (F := @FlipEff R) cmd = None -> prob_handler cmd = store_op cmd.
+Proof. by rewrite /prob_handler=> ->. Qed.
+
+Definition compliant :=
+  forall s X (cmd : Fx X), prj (F := @FlipEff R) cmd = None ->
+    promise c s cmd (res s cmd).
+
+End prob_handler.
