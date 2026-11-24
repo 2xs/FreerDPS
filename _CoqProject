@@ -23,4 +23,5 @@
 ./examples/freer_choice_ping.v
 ./examples/ping_client_serv_freespec.v
 ./examples/prob_pcs_common.v
+./examples/ping_components.v
 ./examples/test_provide_transitivity.v
