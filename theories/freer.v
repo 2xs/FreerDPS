@@ -7,7 +7,7 @@ Local Close Scope nat_scope.
 From mathcomp Require Import boot order.
 From mathcomp Require Import boolp functions.
 From monae Require Import hierarchy.
-From FreerDPS Require Import init effect.
+From FreerDPS Require Import init monae_extra effect.
 From HB Require Import structures.
 
 Require Import Morphisms.
@@ -256,6 +256,15 @@ apply: (f_ind (fun X => P X \o (denote _ _ X))) => *;
   rewrite compE.
 - by rewrite denote_ret.
 - by rewrite denote_bind denote_trigger; exact: Hb.
+Qed.
+
+Lemma denote_retry_until {Fx : effect} {M : freerMonad Fx} {N : monad}
+    (h : Fx ~~> N) {A : UU0} (stop : pred A) (run : M A) fuel :
+  denote N h A (retry_until stop run fuel) =
+  retry_until stop (denote N h A run) fuel.
+Proof.
+elim: fuel=> [//|fuel IH] /=; rewrite denote_bind.
+by congr (_ >>= _); apply: funext=> r; rewrite compE denote_if denote_ret IH.
 Qed.
 
 Definition ptrigger {Fx F : effect} `{F -< Fx} {M : freerMonad Fx} : F ~~> M :=

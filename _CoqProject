@@ -6,6 +6,7 @@
 -arg -w -arg -ambiguous-paths
 
 ./theories/init.v
+./theories/monae_extra.v
 ./theories/effect.v
 ./theories/freer.v
 ./theories/free_choice.v

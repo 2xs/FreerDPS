@@ -11,7 +11,7 @@
     semantics (according to a certain definition of “correct”). *)
 
 From mathcomp Require Import ssreflect ssrfun choice.
-From FreerDPS Require Import init effect freer mathcomp_extra.
+From FreerDPS Require Import init monae_extra effect freer mathcomp_extra.
 From HB Require Import structures.
 
 From mathcomp Require Import reals.
