@@ -273,8 +273,8 @@ Proof.
 apply/seteqP; rewrite /S_p /serve_of freer_to_hoare_bindE; split=> s /=;
   first by case; rewrite recv_respect.
 split; first by rewrite recv_respect.
-move=> [[]|] [sQ cQ] /recv_run /=; case=> -> ->.
-- rewrite freer_to_hoare_bindE; split=> *.
+move=> [[]|] [sQ cQ] /recv_run /=; case=> -> ->;
+ first (rewrite freer_to_hoare_bindE; split=> [|*]).
 all: by rewrite ?reply_respect // pre_ret.
 Qed.
 
@@ -286,8 +286,9 @@ else clientQ s' = clientQ s)
   /\ serverQ s' = None.
 Proof.
 move: run; rewrite freer_to_hoare_bindE;
-  case=>[[[]|]] [[s1 c1]] [] /recv_run /= [] -> ->.
-- rewrite freer_to_hoare_bindE; case=>[[]] [[s2 c2]] [] /reply_run /= [] -> ->.
+  case=>[[[]|]] [[s1 c1]] [] /recv_run /= [] -> ->;
+    first (rewrite freer_to_hoare_bindE;
+      case=>[[]] [[s2 c2]] [] /reply_run /= [] -> ->).
 all: by rewrite post_ret; case=> <- <-.
 Qed.
 
