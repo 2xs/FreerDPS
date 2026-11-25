@@ -84,7 +84,8 @@ Class StrictProvide2 (Fx F1 F2 : effect)
     d2 :: @Distinguish Fx F2 F1 p2 p1.(may_prov) ;
   }.
 
-Notation "F1 ;; F2 -<< Fx" := (StrictProvide2 Fx F1 F2 ) (at level 50, no associativity): type_scope.
+Notation "F1 ;; F2 -<< Fx" := (StrictProvide2 Fx F1 F2 )
+                              (at level 50, no associativity): type_scope.
 
 #[global] Hint Mode MayProvide + + : typeclass_instances.
 #[global] Hint Mode Provide + + : typeclass_instances.
@@ -282,7 +283,7 @@ Instance distinguish_strictT
     @Distinguish FX F G
       (@provideT FX Fl F pf sp.(p1))
       (@provideT FX Fr G pg sp.(p2)).(may_prov).
-Proof. by constructor=> A cmd /=; rewrite (@injK_None _ _ _ _ _ sp.(d1)). Defined.
+Proof. by constructor=> A cmd /=; rewrite injK_None. Defined.
 
 (** This one is not an instance because the typeclass
   * resolver would just loop wildly otherwise *)
@@ -326,20 +327,16 @@ Ltac find_provideT_from_strict :=
     reason as [strictProvideT]. *)
 Definition strict_inner_left {FX Fx F G L : effect}
     (inner : F ;; G -<< Fx) (outer : Fx ;; L -<< FX) : F ;; L -<< FX.
-Proof.
-refine {| p1 := @provideT FX Fx F inner.(p1) outer.(p1); p2 := outer.(p2) |}.
-  by constructor=> A cmd /=; exact: (@injK_None _ _ _ _ _ outer.(d1)).
-constructor=> A cmd /=.
-by rewrite (@injK_None _ _ _ _ _ outer.(d2)).
+Proof. Check provideT.
+by refine {| p1 := @provideT FX Fx F inner.(p1) outer.(p1); p2 := outer.(p2) |};
+  constructor=> A cmd /=; rewrite injK_None.
 Defined.
 
 Definition strict_inner_right {FX Fx F G L : effect}
     (inner : F ;; G -<< Fx) (outer : Fx ;; L -<< FX) : G ;; L -<< FX.
 Proof.
-refine {| p1 := @provideT FX Fx G inner.(p2) outer.(p1); p2 := outer.(p2) |}.
-  by constructor=> A cmd /=; exact: (@injK_None _ _ _ _ _ outer.(d1)).
-constructor=> A cmd /=.
-by rewrite (@injK_None _ _ _ _ _ outer.(d2)).
+by refine {| p1 := @provideT FX Fx G inner.(p2) outer.(p1); p2 := outer.(p2) |};
+   constructor=> A cmd /=; rewrite injK_None.
 Defined.
 
 Ltac find_strict_inner :=
