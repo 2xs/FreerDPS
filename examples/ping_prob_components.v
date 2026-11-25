@@ -150,6 +150,18 @@ case: lost=> //=; rewrite freer_contract_left //.
 by rewrite pre_to_hoare_triggerP.
 Qed.
 
+(** [transmit] either keeps the packet or drops it. *)
+Lemma post_transmit ns u ns' :
+  post (link_c |~ (transmit p q : M unit)) ns u ns' ->
+  ns' = ns \/ ns' = drop_queue q ns.
+Proof.
+rewrite freer_to_hoare_bindE freer_contract_right //.
+case=> lost [ns1] [/post_to_hoare_triggerP [-> _]].
+rewrite post_to_hoare_whenP; case: lost=> /=; last by move=> ->; left.
+case=> -[]; rewrite freer_contract_left //.
+by move/post_to_hoare_triggerP=> [-> _]; right.
+Qed.
+
 End transmit_s.
 
 Section lossy_client.
@@ -186,7 +198,7 @@ Lemma lossy_client_handler_preserves_inv X (cmd : Fx X) :
   preserves_invariant chan_inv (hoare_of_contract lossy_client_c cmd).
 Proof.
 apply: (shared_preserves_invariant (cf := client_c) (ce := link_c)).
-  exact: (@client_handler_preserves_inv _ (refl_Provide client_api)).
+  exact: (client_handler_preserves_inv (Fx:= client_api)).
 exact: link_handler_preserves_inv.
 Qed.
 
@@ -204,6 +216,27 @@ Proof.
 move=> ? ns inv ? cmd _; split; first exact: pre_lossy_client.
 move=> t ns' run; split=> //.
 by apply: (lossy_client_run_preserves_inv _ run inv); exact: pre_lossy_client.
+Qed.
+
+(** [ASK] leaves [clientQ] untouched. *)
+Lemma lossy_ask_run ns u ns' :
+  post (lossy_client_c |~ lossy_client ASK) ns u ns' ->
+  clientQ ns' = clientQ ns.
+Proof.
+rewrite /= freer_to_hoare_bindE freer_contract_left //.
+case=> -[] [ns1] [/send_run [cQ _]].
+rewrite freer_contract_right // freer_contract_prodT.
+by case/post_transmit=> ->; rewrite /= ?clientQ_consume_serverQ.
+Qed.
+
+(** [ANSWER] empties [clientQ] and leaves [serverQ] untouched. *)
+Lemma lossy_answer_run ns r ns' :
+  post (lossy_client_c |~ lossy_client ANSWER) ns r ns' ->
+  clientQ ns' = None /\ serverQ ns' = serverQ ns.
+Proof.
+rewrite /= freer_contract_left // /answer /answer_of freer_to_hoare_bindE.
+case=> inc [ns1] [/wait_run [cQ sQ]].
+by case: inc=> [[]|]; rewrite post_ret=> -[_ <-].
 Qed.
 
 End lossy_client.
@@ -243,12 +276,11 @@ rewrite freer_contract_right // freer_contract_prodT.
 by apply: pre_transmit; rewrite /= cQ clientQ_fill_clientQ.
 Qed.
 
-(** Each primitive of [lossy_server_c] preserves the channel invariant. *)
 Lemma lossy_server_handler_preserves_inv X (cmd : Fx X) :
   preserves_invariant chan_inv (hoare_of_contract lossy_server_c cmd).
 Proof.
 apply: (shared_preserves_invariant (cf := server_c) (ce := link_c)).
-  exact: (@server_handler_preserves_inv _ (refl_Provide server_api)).
+  exact: (server_handler_preserves_inv (Fx:= server_api)).
 exact: link_handler_preserves_inv.
 Qed.
 
@@ -266,6 +298,22 @@ Proof.
 move=> ? ns inv ? cmd _; split; first exact: pre_lossy_server.
 move=> t ns' run; split=> //.
 by apply: (lossy_server_run_preserves_inv _ run inv); exact: pre_lossy_server.
+Qed.
+
+Lemma lossy_serve_run ns r ns' :
+  post (lossy_server_c |~ lossy_server SERVE) ns r ns' ->
+  serverQ ns' = None /\ (r = None -> clientQ ns' = clientQ ns).
+Proof.
+rewrite /= /lossy_serve /serve_of freer_to_hoare_bindE freer_contract_left //.
+case=> inc [ns1] [/recv_run [cQ sQ]].
+case: inc=> [[]|] /=; last 2 first.
+- by rewrite post_ret=> -[<- <-].
+- by rewrite post_ret=> -[<- <-].
+rewrite freer_to_hoare_bindE; case=> -[] [ns2] [+ /post_ret [<- <-]].
+rewrite freer_to_hoare_bindE freer_contract_left //.
+case=> -[] [ns3] [/reply_run [_ sQ3]].
+rewrite freer_contract_right // freer_contract_prodT.
+by case/post_transmit=> ->; split=> //=; rewrite sQ3.
 Qed.
 
 End lossy_server.
@@ -356,11 +404,41 @@ Proof.
 by move=> *; rewrite lossy_server_contractE; exact: lossy_server_correct.
 Qed.
 
+Local Abbreviation lossy_round := (round_with
+  (@lossy_client _ _ Hlink client_side M p)
+  (@lossy_server _ _ Hlink server_side M p)).
+
+(** Whatever is lost, a round started on an empty network ends on one. *)
+Lemma post_lossy_round_empty n r n' :
+  ping_inv n -> post (lossy_contract |~ lossy_round) n r n' -> ping_inv n'.
+Proof.
+move=> ->; rewrite /round_with /round_of freer_to_hoare_bindE.
+case=> served [ns2] []; rewrite freer_to_hoare_bindE.
+case=> -[] [ns1] []; rewrite lossy_client_contractE=> /lossy_ask_run cQ1.
+rewrite lossy_server_contractE=> /lossy_serve_run [sQ2 cQ2].
+case: served cQ2=> [[]|] cQ2; last first.
+  rewrite post_ret=> -[_ <-]; move/(_ erefl): cQ2; rewrite cQ1 /=.
+  by case: ns2 sQ2=> ? ? /= -> ->.
+rewrite lossy_client_contractE=> /lossy_answer_run [cQ sQ].
+by case: n' cQ sQ sQ2=> ? ? /= -> -> ->.
+Qed.
+
+Lemma post_lossy_ping_empty T n r n' (cmd : ping_round T) :
+  ping_inv n -> post (lossy_contract |~ lossy_ping cmd) n r n' -> ping_inv n'.
+Proof.
+case: cmd r=> [|fuel] r; first exact: post_lossy_round_empty.
+exact: (post_retry_until post_lossy_round_empty).
+Qed.
+
 Lemma lossy_ping_correct :
   correct_component lossy_ping (no_contract ping_round)
-    lossy_contract (fun=> chan_inv).
+    lossy_contract (fun _ ns => chan_inv ns /\ ping_inv ns).
 Proof.
-exact/ping_with_correct/lossy_server_shared_correct/lossy_client_shared_correct.
+move=> sin ns [cinv pinv] T cmd req.
+have [ping_pre ping_post] := ping_with_correct lossy_client_shared_correct
+  lossy_server_shared_correct cinv req.
+split=> // t ns' run; have [_ cinv'] := ping_post t ns' run.
+by split=> //; split=> //; exact: post_lossy_ping_empty pinv run.
 Qed.
 End lossy_protocol.
 
@@ -583,7 +661,7 @@ Qed.
 
 Theorem lossy_ping_hoare_and_prob :
   correct_component lossy_ping (no_contract ping_round) proto_c
-    (fun=> chan_inv) /\
+    (fun _ ns => chan_inv ns /\ ping_inv ns) /\
   prob_correct_component (HF := link_side.(p2)) (N := N) lossy_ping proto_c res
     empty_net (ref_ping_pong p).
 Proof.
