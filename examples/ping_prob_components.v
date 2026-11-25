@@ -114,7 +114,7 @@ Proof. by exists (frTrigger (DROP q)). Qed.
 End link_syntax.
 
 (* We split because of the provideT we will go through *)
-Section link_syntax.
+Section transmit_syntax.
 Context {LinkF Fx : effect} `{Hlink : NETWORK ;; @FlipEff R -<< LinkF}.
 Context `{HL : LinkF -< Fx} {M : freerMonad Fx} (p : {prob R}).
 Lemma syn_transmit q :
@@ -127,7 +127,7 @@ exists (frBind (frTrigger (inj (flipe p))) (fun lost =>
 rewrite /= /transmit; congr (_ >>= _).
 by apply: funext=> -[].
 Qed.
-End link_syntax.
+End transmit_syntax.
 
 #[local] Hint Extern 0 (providesOnlyF (flip _)) =>
   solve [exact: syn_flip] : core.
@@ -424,64 +424,51 @@ Variable res : net_state -> forall X, ProtoF X -> X.
 Hypothesis res_compliant : @compliant R _ link_side.(p2) _ proto_c res.
 
 Local Abbreviation h := (@prob_handler R _ link_side.(p2) _ N proto_c res).
-
+Check inj.
 Lemma h_send m :
   h (@inj _ _ client_side.(p1) _ (SEND m)) =
   get >>= fun s => put (fill_serverQ m s) >> Ret tt.
 Proof.
-rewrite prob_handler_store; first exact: injK_None.
-rewrite /store_op; bind_ext=> s.
-rewrite /= /effect.injT !injK_Some /=.
-by case: (res s _).
+rewrite prob_handler_unit; first exact: injK_None.
+by bind_ext=> s; rewrite /= !injK_Some.
 Qed.
 
 Lemma h_wait :
   h (@inj _ _ client_side.(p1) _ WAIT) =
   get >>= fun s => put (consume_clientQ s) >> Ret (clientQ s).
 Proof.
-have flip0 :
-    @prj _ _ (@may_prov _ _ link_side.(p2)) _
-      (@inj _ _ client_side.(p1) _ WAIT) = None.
-  exact: injK_None.
-rewrite prob_handler_store // /store_op; bind_ext=> s.
-move: (res_compliant s flip0).
-rewrite /= /gen_promise /effect.injT !injK_Some /=.
-by case=> -[+ _] _; rewrite /gen_promise injK_Some /= => /eqP ->.
+rewrite (prob_handler_promise (f := clientQ) res_compliant).
+- exact: injK_None.
+- move=> s r; rewrite /= /gen_promise !injK_Some /=.
+  by case=> -[+ _] _; rewrite /gen_promise injK_Some /= => /eqP.
+- by bind_ext=> s; rewrite /= !injK_Some.
 Qed.
 
 Lemma h_reply m :
   h (@inj _ _ server_side.(p1) _ (RPLY m)) =
   get >>= fun s => put (fill_clientQ m s) >> Ret tt.
 Proof.
-rewrite prob_handler_store; first exact: injK_None.
-rewrite /store_op; bind_ext=> s.
-rewrite /= /effect.injT !injK_Some /= (@injK_None _ _ _ _ _ Happ.(d2)).
-by case: (res s _).
+rewrite prob_handler_unit; first exact: injK_None.
+by bind_ext=> s; rewrite /= !injK_Some injK_None.
 Qed.
 
 Lemma h_recv :
   h (@inj _ _ server_side.(p1) _ RECV) =
   get >>= fun s => put (consume_serverQ s) >> Ret (serverQ s).
 Proof.
-have flip0 :
-    @prj _ _ (@may_prov _ _ link_side.(p2)) _
-      (@inj _ _ server_side.(p1) _ RECV) = None.
-  exact: injK_None.
-rewrite prob_handler_store // /store_op; bind_ext=> s.
-move: (res_compliant s flip0).
-rewrite /= /gen_promise /effect.injT !injK_Some /=.
-case=> -[_ +] _; rewrite /gen_promise injK_Some /= => /eqP ->.
-by rewrite (@injK_None _ _ _ _ _ Happ.(d2)).
+rewrite (prob_handler_promise (f := serverQ) res_compliant).
+- exact: injK_None.
+- move=> s r; rewrite /= /gen_promise !injK_Some /=.
+  by case=> -[_ +] _; rewrite /gen_promise injK_Some => /eqP.
+by bind_ext=> s; rewrite /= /effect.injT !injK_Some injK_None.
 Qed.
 
 Lemma h_drop q :
   h (@inj _ _ link_side.(p1) _ (DROP q)) =
   get >>= fun s => put (drop_queue q s) >> Ret tt.
 Proof.
-rewrite prob_handler_store; first exact: injK_None.
-rewrite /store_op; bind_ext=> s.
-rewrite /= /effect.injT (@injK_None _ _ _ _ _ Hproto.(d2)) !injK_Some /=.
-by case: (res s _).
+rewrite prob_handler_unit; first exact: injK_None.
+by bind_ext=> s; rewrite /= injK_None !injK_Some.
 Qed.
 
 Lemma h_flip q : h (@inj _ _ link_side.(p2) _ (flipe q)) = bcoin q.
@@ -493,9 +480,8 @@ Lemma put_transmit s q :
   put s >> denote _ h _ (@transmit _ link_side M p q) =
   put (drop_queue q s) <| p |> put s.
 Proof.
-rewrite /transmit denote_bind /flip /ptrigger denote_trigger h_flip /bcoin.
-rewrite choice_bindDl !bindretf !compE /when /= denote_ret choice_bindDr.
-rewrite !bindmskip /drop_packet /ptrigger denote_trigger h_drop.
+rewrite denote_bind denote_trigger h_flip compE choice_bindDl !bindretf /=.
+rewrite denote_ret choice_bindDr !bindmskip denote_trigger h_drop.
 by rewrite -bindA putgetput bindmskip putput.
 Qed.
 
@@ -504,14 +490,11 @@ Lemma lossy_client_prob_correct :
     denote _ h _ (@lossy_client _ _ Hlink client_side M p _ cmd) =
     spec_client p cmd.
 Proof.
-move=> _ [] /=.
-  rewrite denote_bind /send /ptrigger denote_trigger h_send bindA.
-  bind_ext=> s; rewrite bindA bindretf compE.
-  exact: put_transmit.
-rewrite /answer /answer_of denote_bind /wait /ptrigger denote_trigger h_wait.
-rewrite bindA.
-bind_ext=> s; rewrite bindA bindretf compE.
-by case: (clientQ s)=> [[]|]; rewrite denote_ret.
+move=> _ [] /=;
+  rewrite denote_bind denote_trigger ?h_send ?h_wait bindA;
+  bind_ext=> s; rewrite bindA bindretf.
+- exact: put_transmit.
+- by case: (clientQ s)=> [[]|]; rewrite compE denote_ret.
 Qed.
 
 Lemma lossy_server_prob_correct :
@@ -519,13 +502,13 @@ Lemma lossy_server_prob_correct :
     denote _ h _ (@lossy_server _ _ Hlink server_side M p _ cmd) =
     spec_server p cmd.
 Proof.
-move=> _ [] /=; rewrite /lossy_serve /serve_of denote_bind /recv /ptrigger.
-rewrite denote_trigger h_recv bindA; bind_ext=> s; rewrite bindA bindretf.
-rewrite compE; case: (serverQ s)=> [[]|] /=; [| by rewrite denote_ret ..].
-rewrite !denote_bind /reply /ptrigger denote_trigger h_reply !bindA.
+move=> _ [] /=; rewrite denote_bind denote_trigger h_recv bindA.
+bind_ext=> s; rewrite bindA bindretf compE.
+case: (serverQ s)=> [[]|]; [| by rewrite denote_ret ..].
+rewrite !denote_bind denote_trigger h_reply !bindA.
 rewrite -bindA putgetput !bindA bindretf compE.
 rewrite -bindA putput -bindA put_transmit.
-by congr (_ >>= _); apply: funext; case; rewrite compE denote_ret.
+by congr (_ >>= _); apply: funext=> -[]; rewrite compE denote_ret.
 Qed.
 
 Local Abbreviation lossy_ping := (@lossy_ping _ _ _ Hlink Happ Hproto M p).
@@ -537,7 +520,7 @@ Lemma lossy_round_denote :
   round_of (spec_client p ASK) (fun=> spec_server p SERVE)
     (fun=> spec_client p ANSWER).
 Proof.
-rewrite /round_with /round_of 2!denote_bind lossy_client_prob_correct.
+rewrite 2!denote_bind lossy_client_prob_correct.
 congr (_ >>= _).
 - by congr (_ >>= _); apply: funext; case; exact: lossy_server_prob_correct.
 - apply: funext; case; [case|]; rewrite compE.
@@ -562,9 +545,9 @@ Lemma lossy_pings_exchanges fuel :
   put empty_net >> denote _ h _ (lossy_ping (retry_round fuel)) =
   put empty_net >> exchanges (M := N) (choose := choice) p%:num.~%:i01 fuel.
 Proof.
-have := lossy_ping_distribution.
-rewrite denote_retry_until !lossy_round_denote; set round := round_of _ _ _.
-elim: fuel=> // fuel /[swap] one /(_ one) IH.
+have := lossy_ping_distribution; rewrite denote_retry_until !lossy_round_denote.
+set round := round_of _ _ _=> one.
+elim: fuel=> // fuel IH.
 by rewrite -bindA one bindA !choice_bindDl !bindretf /= !choice_bindDr IH.
 Qed.
 
