@@ -333,8 +333,8 @@ Qed.
 
 End c_inv_s.
 
-#[local] Hint Extern 0 (providesOnlyF answer) =>
-  solve [exact: (syn_client ANSWER)] : core.
+#[export] Hint Extern 0 (providesOnlyF (@client _ _ _ _ _)) =>
+  solve [exact: syn_client] : core.
 
 Section s_s.
 Context {Fx : effect} `{server_api -< Fx} {M : freerMonad Fx}.
@@ -361,6 +361,9 @@ move=> + [-> _] [??]; clear cmd.
 by case: s_cmd r=> [m|] r /= => [/eqP ->|]; split=> //; exact/eqP.
 Qed.
 End s_s.
+
+#[export] Hint Extern 0 (providesOnlyF (@server _ _ _ _ _)) =>
+  solve [exact: syn_server] : core.
 
 Section s_inv_s.
 Context {Fx : effect} `{server_api -< Fx} {M : inductiveFreerMonad Fx}.
@@ -424,23 +427,23 @@ Lemma round_with_ok (cl : component (M := M) CLIENT Fx)
     pre (c |~ round_with cl sv) ns /\
     forall t ns', post (c |~ round_with cl sv) ns t ns' -> chan_inv ns'.
 Proof.
-move=> cl_ok sv_ok ns inv; rewrite /round_with /round_of bindA; split.
+move=> cl_ok sv_ok ns inv.
+rewrite /round_with /round_of bindA; split.
 - rewrite freer_to_hoare_bindE; split;
-    first by exact: (correct_pre cl_ok).
-  move=> _ ns1 /(correct_post (sin := tt) cl_ok inv I) [_ inv1].
+    first by exact: (correct_pre cl_ok tt).
+  move=> _ ns1 /(correct_post (sin:= tt) cl_ok inv I) [_ inv1].
   rewrite freer_to_hoare_bindE; split;
-    first by exact: (correct_pre sv_ok).
+    first by exact: (correct_pre sv_ok tt).
   move=> served ns2 /(correct_post (sin := tt) sv_ok inv1 I) [_ inv2].
-  case: served=> [[]|]; last by rewrite pre_ret.
-  exact: (correct_pre cl_ok).
+  case: served=> [[]|].
+  + exact: (correct_pre cl_ok tt).
+  + by rewrite pre_ret.
 move=> result ns'; rewrite freer_to_hoare_bindE.
 case=> _ [ns1] [/(correct_post (sin := tt) cl_ok inv I) [_ inv1]].
 rewrite freer_to_hoare_bindE.
 case=> served [ns2] [/(correct_post (sin := tt) sv_ok inv1 I) [_ inv2]].
 case: served=> [[]|]; last by rewrite post_ret=> -[_ <-].
 by case/(correct_post (sin := tt) cl_ok inv2 I).
-Unshelve.
-all: done.
 Qed.
 
 Theorem ping_with_correct (cl : component (M := M) CLIENT Fx)
@@ -451,7 +454,7 @@ Theorem ping_with_correct (cl : component (M := M) CLIENT Fx)
     (fun=> chan_inv).
 Proof.
 move=> cl_ok sv_ok ?? inv _ [|fuel] _ /=.
-  have [round_pre round_post] := round_with_ok cl_ok sv_ok inv.
+have [round_pre round_post] := round_with_ok cl_ok sv_ok inv.
   by split=> // t ns' /round_post.
 have [retry_pre retry_post] :=
   retry_ping_pong_ok (round_with_ok cl_ok sv_ok) fuel inv.
@@ -459,6 +462,80 @@ by split=> // t ns' /retry_post.
 Qed.
 
 End proto_s.
+
+Section proto_empty.
+Context {ProtoF : effect} `{client_api ;; server_api -<< ProtoF}.
+Context {M : freerMonad ProtoF}.
+
+Definition ping_inv ns := ns = {| serverQ := None; clientQ := None |}.
+
+Local Abbreviation round := (round_with (M := M) client server).
+
+Lemma post_round_empty n r n' :
+  ping_inv n -> post (ping_contract |~ round) n r n' -> ping_inv n'.
+Proof.
+move=> ->; rewrite /round_with /round_of /= bindA.
+rewrite freer_to_hoare_bindE freer_contract_left //.
+case=> -[] [[s1 c1]] [] /send_run /= [-> ->].
+rewrite freer_to_hoare_bindE freer_contract_right //.
+case=> [[[]|]] [[s2 c2]] [] /s_p_run /= [-> ->];
+  last by rewrite post_ret=> -[_ <-].
+rewrite freer_to_hoare_bindE freer_contract_left //.
+case=> o [[s3 c3]] [] /wait_run /= [-> ->].
+by case: o=> [[]|]; rewrite post_ret=> -[_ <-].
+Qed.
+
+Lemma post_retry_empty n r n' fuel :
+  ping_inv n ->
+  post (ping_contract |~ retry_until success_event round fuel) n r n' ->
+  ping_inv n'.
+Proof.
+elim: fuel n=> [|fuel IH] n n_inv; first exact: post_round_empty.
+rewrite freer_to_hoare_bindE.
+case=> r1 [s1] [/(post_round_empty n_inv) s1_inv].
+by case: success_event; [rewrite post_ret=> -[_ <-] | exact: IH].
+Qed.
+
+Lemma post_ping_with_empty T n r n' (cmd : ping_round T) :
+  ping_inv n ->
+  post (ping_contract |~ ping_with (M := M) client server cmd) n r n' ->
+  ping_inv n'.
+Proof.
+by case: cmd r=> [|fuel] r; [exact: post_round_empty | exact: post_retry_empty].
+Qed.
+
+End proto_empty.
+
+Section proto_correct.
+Context {ProtoF : effect} `{client_api ;; server_api -<< ProtoF}.
+Context {M : inductiveFreerMonad ProtoF}.
+
+Lemma client_ping_correct :
+  correct_component (client (M := M)) (no_contract CLIENT) ping_contract
+    (fun=> chan_inv).
+Proof.
+by move=> *; rewrite freer_contract_left //; exact: client_correct.
+Qed.
+
+Lemma server_ping_correct :
+  correct_component (server (M := M)) (no_contract SERVER) ping_contract
+    (fun=> chan_inv).
+Proof.
+by move=> *; rewrite freer_contract_right //; exact: server_correct.
+Qed.
+
+Theorem ping_correct :
+  correct_component (ping_with (M := M) client server) (no_contract ping_round)
+    ping_contract (fun _ ns => chan_inv ns /\ ping_inv ns).
+Proof.
+move=> sin ns [cinv pinv] T cmd req.
+have [ping_pre ping_post] := ping_with_correct client_ping_correct
+  server_ping_correct cinv req.
+split=> // t ns' run; have [_ cinv'] := ping_post t ns' run.
+by split=> //; split=> //; exact: post_ping_with_empty pinv run.
+Qed.
+
+End proto_correct.
 
 (** * Probability of Success *)
 
