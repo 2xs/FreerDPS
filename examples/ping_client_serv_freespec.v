@@ -1,5 +1,5 @@
 From monae Require Import preamble hierarchy.
-From mathcomp Require Import boot boolp reals Rstruct classical_sets.
+From mathcomp Require Import boot boolp classical_sets.
 From FreerDPS Require Import all_freerdps ping_common.
 From HB Require Import structures.
 
@@ -7,13 +7,10 @@ Set Implicit Arguments.
 Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
-Local Abbreviation R := Rdefinitions.R.
-
 Local Open Scope monae_scope.
 Local Open Scope contract_scope.
 Local Open Scope classical_set_scope.
 Close Scope nat_scope.
-
 (** * Specifying the Ping-Pong Protocol *)
 
 Module Export PingPongM.
@@ -42,7 +39,6 @@ Context {Fx : effect} `{server_api -< Fx} {M : freerMonad Fx}.
 Definition reply : M unit := ptrigger $ RPLY Pong.
 Definition recv : M (option msg) := ptrigger RECV.
 Definition S_p : M (option unit) := serve_of (fun=> recv) reply tt.
-Arguments S_p : simpl never.
 End server_program.
 End PingPongM.
 
@@ -201,7 +197,6 @@ Lemma wait_run (s s' : net_state) p
 clientQ s' = None /\ serverQ s' = serverQ s.
 Proof. by move: run=> /post_to_hoare_triggerP=> -[] ->. Qed.
 
-
 Lemma c_respect :
 pre (client_c |~ (C : M _)) = [set n | clientQ n != Some Ping].
 Proof.
@@ -290,10 +285,9 @@ then clientQ s' = Some Pong
 else clientQ s' = clientQ s)
   /\ serverQ s' = None.
 Proof.
-move: run; rewrite /S_p /serve_of freer_to_hoare_bindE.
-case=>[[[]|]] [[s1 c1]] [] /recv_run /= [] -> ->.
-- rewrite freer_to_hoare_bindE.
-  case=>[[]] [[s2 c2]] [] /reply_run /= [] -> ->.
+move: run; rewrite freer_to_hoare_bindE;
+  case=>[[[]|]] [[s1 c1]] [] /recv_run /= [] -> ->.
+- rewrite freer_to_hoare_bindE; case=>[[]] [[s2 c2]] [] /reply_run /= [] -> ->.
 all: by rewrite post_ret; case=> <- <-.
 Qed.
 
@@ -315,11 +309,9 @@ Lemma pre_retry_ping_pong fuel :
   pre (c |~ run) = [set: _] ->
   pre (c |~ retry_until success_event run fuel) = [set: _].
 Proof.
-rewrite -!subTset=> Hpre; elim: fuel=> [|fuel IH] ns //= ?.
-- exact: Hpre.
-rewrite freer_to_hoare_bindE; split=> [|result ns1 _]; first exact: Hpre.
-case: result. rewrite pre_ret //.
-all: by move: Hpre=>/(_ ns1)=>Hpre; exact/IH.
+rewrite -!subTset=> Hpre; elim: fuel=> [|fuel IH] *; first exact: Hpre.
+rewrite freer_to_hoare_bindE; split=> [|result s _]; first exact: Hpre.
+by case: result; [by rewrite pre_ret | have ? := Hpre s; exact: IH ..].
 Qed.
 
 End retry.
@@ -327,8 +319,6 @@ End retry.
 Module ProtocolM.
 Section proto_s.
 
-(** [retry_round fuel] retries the round while it does not get the Pong, at
-    most [fuel] more times. *)
 Inductive ping_round : effect :=
 | one_round : ping_round outcome
 | retry_round : nat -> ping_round outcome.
@@ -341,7 +331,6 @@ Context {M : freerMonad ProtoF}.
 Definition ping_pong : M outcome :=
   round_of send (fun=> S_p) (answer_of (fun=> wait)).
 
-(** Retrying [ping_pong], as [ping_pongs_with] does. *)
 Definition ping_pongs (fuel : nat) : M outcome :=
   retry_until success_event ping_pong fuel.
 
@@ -355,23 +344,24 @@ Definition ping_contract : contract ProtoF net_state := client_c -^- server_c.
 
 Lemma pre_ping_pong : pre (ping_contract |~ ping_pong) = [set: _].
 Proof.
-rewrite /ping_pong /round_of /answer_of bindA -subTset=> net Hn.
-rewrite freer_to_hoare_bindE freer_contract_left //=; split.
-  by rewrite send_respect.
+rewrite /ping_pong /round_of /answer_of bindA -subTset=>??.
+rewrite freer_to_hoare_bindE freer_contract_left //=; split;
+  first by rewrite send_respect.
 case=> [] [s1 c1] /send_run /= [-> ->].
-rewrite freer_to_hoare_bindE freer_contract_right //; split.
-  by rewrite s_p_respect; exact/eqP.
-move=> [[]|] [s2 c2] /s_p_run /= [-> ->].
-+ rewrite freer_to_hoare_bindE freer_contract_left //=; split.
-    by rewrite wait_respect; exact/eqP.
-  move=> [[]|] [s3 c3] /wait_run /= [-> ->].
-all: by rewrite pre_ret.
+rewrite freer_to_hoare_bindE freer_contract_right //; split;
+  first by rewrite s_p_respect; exact/eqP.
+move=> [[]|] [s2 c2] /s_p_run /= [-> ->]; last by rewrite pre_ret.
++ rewrite freer_to_hoare_bindE freer_contract_left //=; split;
+    first by rewrite wait_respect; exact/eqP.
+  by move=> [[]|] [s3 c3] /wait_run /= [-> ->]; rewrite pre_ret.
 Qed.
 
 Lemma pre_ping_any_cmd T (cmd : ping_round T) :
   pre (ping_contract |~ ping_protocol cmd) = [set: _].
 Proof.
-by case: cmd=> [|fuel] /=; last apply/pre_retry_ping_pong; exact: pre_ping_pong.
+by case: cmd=> [|?];
+  last apply: pre_retry_ping_pong;
+  exact: pre_ping_pong.
 Qed.
 
 Lemma ping_handler_preserves_inv X (cmd : ProtoF X) :
@@ -380,21 +370,47 @@ Proof.
 move=> s r s' /=.
 do 2 rewrite /gen_requirement /gen_state_update /gen_promise /=.
 case: (prj (F:=client_api) cmd)=> [c_cmd|].
-- move=> [c_req _] [-> _] [sQ_ok cQ_ok]; clear cmd.
-  case: c_cmd r c_req=> [m|] r /= c_req; rewrite /chan_inv.
-  - move/eqP: c_req=> ->; rewrite serverQ_fill_serverQ clientQ_fill_serverQ.
-    by split=> //; apply/eqP.
-  - rewrite serverQ_consume_clientQ clientQ_consume_clientQ.
-    by split=> //; apply/eqP.
+- move=> [+ _] [-> _] [sQ_ok cQ_ok]; clear cmd.
+  by case: c_cmd r=> [m|] r /= => [/eqP ->|]; split=>//; exact/eqP.
 case: (prj (F:=server_api) cmd)=> [s_cmd| _]/=; last by case=> ->.
-move=> [_ s_req] [-> _] [sQ_ok cQ_ok]; clear cmd.
-case: s_cmd r s_req=> [m|] r /= s_req; rewrite /chan_inv.
-- move/eqP: s_req=> ->; rewrite serverQ_fill_clientQ clientQ_fill_clientQ.
-  by split=> //; apply/eqP.
-- rewrite serverQ_consume_serverQ clientQ_consume_serverQ.
-  by split=> //; apply/eqP.
+move=> [_ +] [-> _] [sQ_ok cQ_ok]; clear cmd.
+by case: s_cmd r=> [m|] r /= => [/eqP ->|]; split=> //; exact/eqP.
 Qed.
 
+
+Definition ping_inv ns := ns = {| serverQ := None; clientQ := None|}.
+
+Lemma post_ping_pong n r n' :
+  ping_inv n -> post (ping_contract |~ ping_pong) n r n' -> ping_inv n'.
+Proof.
+move=> ->; rewrite /ping_pong /round_of  bindA.
+rewrite freer_to_hoare_bindE freer_contract_left //.
+case=> -[] [[s1 c1]] [] /send_run /= [-> ->].
+rewrite freer_to_hoare_bindE freer_contract_right //.
+case=> [[[]|]] [[s2 c2]] [] /s_p_run /= [-> ->];
+  last by rewrite post_ret=> -[_ <-].
+rewrite freer_to_hoare_bindE freer_contract_left //.
+case=> o [[s3 c3]] [] /wait_run /= [-> ->].
+by case: o=> [[]|]; rewrite post_ret=> -[_ <-].
+Qed.
+
+Lemma post_ping_pongs n r n' fuel :
+  ping_inv n -> post (ping_contract |~ ping_pongs fuel) n r n' -> ping_inv n'.
+Proof.
+elim: fuel n=> [|fuel IH] n n_inv; first exact: post_ping_pong.
+rewrite freer_to_hoare_bindE.
+case=> r1 [s1] [].
+move=>/(post_ping_pong n_inv) -> /=.
+by case: (success_event r1); [rewrite post_ret=> -[_ <-] | exact: IH].
+Qed.
+
+Lemma post_ping_proto T n r n' (cmd : ping_round T) :
+  ping_inv n -> post (ping_contract |~ ping_protocol cmd) n r n' -> ping_inv n'.
+Proof.
+case: cmd r=>[| fuel] r.
+- exact: post_ping_pong.
+- exact: post_ping_pongs.
+Qed.
 End proto_s.
 
 Section proto_inv.
@@ -410,24 +426,19 @@ Qed.
 
 Theorem ping_correct :
   correct_component (ping_protocol (M := M)) (no_contract ping_round)
-    ping_contract (fun=> chan_inv).
+    ping_contract (fun _ ns => chan_inv ns /\ ping_inv ns).
 Proof.
-move=> ? n inv ? cmd _; split=> [| ? ? run].
+move=> [] n [cinv pinv] X cmd []; split=> [| x n' run].
   by rewrite pre_ping_any_cmd.
-split=> //; move: run inv.
-by apply: ping_run_preserves_inv; rewrite pre_ping_any_cmd.
+split=> //; split.
+- by move: run cinv; apply: ping_run_preserves_inv; rewrite pre_ping_any_cmd.
+- exact/post_ping_proto/run/pinv.
 Qed.
 
 End proto_inv.
 End ProtocolM.
 
 (** * Probability of Success *)
-
-(******************************************************************************)
-(* TODO: Rewrite the above using FlipEff instead of `ping_round`, normally the *)
-(*       proofs should be quite straightforward (reusing ping_freer_prob.v at *)
-(*       most points).                                                        *)
-(******************************************************************************)
 
 (**
 A ns transmission succeeds with probability [1 - p]. Packet losses are
