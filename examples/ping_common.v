@@ -3,6 +3,7 @@ From mathcomp Require Import ssrnum ssralg reals.
 From infotheo Require Import realType_ext.
 From monae Require Import preamble hierarchy.
 From HB Require Import structures.
+From FreerDPS Require Import monae_extra.
 
 Import GRing.Theory.
 
@@ -15,6 +16,13 @@ Inductive msg := Ping | Pong.
 HB.instance Definition _ := gen_eqMixin msg.
 Inductive outcome := GotPong | LostPing | LostPong.
 HB.instance Definition _ := gen_eqMixin outcome.
+
+Definition success_event : pred outcome := fun result =>
+  if result is GotPong then true else false.
+
+Lemma success_eventE result :
+  success_event result = if result is GotPong then true else false.
+Proof. by case: result. Qed.
 
 Section syntactic_sugar_for_probabilities.
 Context {R : realType}.
@@ -58,12 +66,23 @@ Section ping_pong_protocol.
 Context {R : realType} {M : monad}.
 Implicit Types (m : msg) (psucc : {prob R}).
 
-Fixpoint retry_ping_pong (run : M outcome) (fuel : nat) : M outcome :=
-  if fuel is fuel'.+1 then
-    run >>= fun result =>
-      if result is GotPong then Ret GotPong else retry_ping_pong run fuel'
-  else
-    run.
+Section no_prob.
+Context {A B C : Type}.
+
+Definition round_of (ask : M A) (serve : A -> M (option B))
+    (answer : B -> M outcome) : M outcome :=
+  ask >>= serve >>= fun served =>
+    if served is Some b then answer b else Ret LostPing.
+
+Definition serve_of (receive : A -> M (option msg)) (respond : M C) (a : A) :
+    M (option C) :=
+  receive a >>= fun inc =>
+    if inc is Some Ping then respond >>= fun c => Ret (Some c) else Ret None.
+
+Definition answer_of (wait : B -> M (option msg)) (b : B) : M outcome :=
+  wait b >>= fun inc => if inc is Some Pong then Ret GotPong else Ret LostPong.
+
+End no_prob.
 
 Section custom_protocol.
 Context {A B C : Type}.
@@ -77,22 +96,22 @@ Definition client_send psucc : M B :=
   initial_prog >>= client_transmit psucc.
 
 (* None marks a missing Ping; Some carries the reply transmission result. *)
-Definition server_reply psucc sent : M (option C) :=
-  retrieve_input sent >>= fun to_server =>
-    if to_server is Some Ping then
-      (reply >>= server_transmit psucc) >>= fun sent => Ret (Some sent)
-    else Ret None.
+Definition server_reply psucc : B -> M (option C) :=
+  serve_of retrieve_input (reply >>= server_transmit psucc).
 
-Definition client_receive sent : M outcome :=
-  wait_data sent >>= fun from_server =>
-    if from_server is Some Pong then Ret GotPong else Ret LostPong.
+Definition client_receive : C -> M outcome := answer_of wait_data.
 
 Definition ping_pong_with psucc : M outcome :=
-  (client_send psucc >>= server_reply psucc) >>= fun response =>
-    if response is Some sent then client_receive sent else Ret LostPing.
+  round_of (client_send psucc) (server_reply psucc) client_receive.
 
 Definition ping_pongs_with psucc (fuel : nat) : M outcome :=
-  retry_ping_pong (ping_pong_with psucc) fuel.
+  retry_until success_event (ping_pong_with psucc) fuel.
+
+Lemma ping_pongs_withSE psucc fuel :
+  ping_pongs_with psucc fuel.+1 =
+    ping_pong_with psucc >>= fun result =>
+      if result is GotPong then Ret GotPong else ping_pongs_with psucc fuel.
+Proof. by congr (_ >>= _); apply: boolp.funext=> -[]. Qed.
 
 Lemma ping_pongs_withE psucc fuel :
   ping_pongs_with psucc fuel =
@@ -101,13 +120,7 @@ Lemma ping_pongs_withE psucc fuel :
         if result is GotPong then Ret GotPong else ping_pongs_with psucc fuel'
     else
       ping_pong_with psucc.
-Proof. by case: fuel. Qed.
-
-Lemma ping_pongs_withSE psucc fuel :
-  ping_pongs_with psucc fuel.+1 =
-    ping_pong_with psucc >>= fun result =>
-      if result is GotPong then Ret GotPong else ping_pongs_with psucc fuel.
-Proof. by []. Qed.
+Proof. by case: fuel=> // fuel; exact: ping_pongs_withSE. Qed.
 
 End custom_protocol.
 End ping_pong_protocol.
@@ -134,7 +147,7 @@ Lemma ping_pongE psucc :
       else Ret LostPing).
 Proof.
 rewrite /ping_pong /ping_pong_with /client_send /server_reply /client_receive.
-rewrite !bindretf bindA.
+rewrite /round_of /serve_of /answer_of !bindretf bindA.
 congr (transmit psucc Ping >>= _).
 apply: boolp.funext=> -[[]|]; rewrite !bindretf //.
 rewrite bindA.
@@ -149,16 +162,13 @@ Lemma ping_pongsE psucc fuel :
         if result is GotPong then Ret GotPong else ping_pongs psucc fuel'
     else
       ping_pong psucc.
-Proof. by case: fuel. Qed.
+Proof. by case: fuel=> // fuel; exact: ping_pongs_withSE. Qed.
 
 Lemma ping_pongsSE psucc fuel :
   ping_pongs psucc fuel.+1 =
     ping_pong psucc >>= fun result =>
       if result is GotPong then Ret GotPong else ping_pongs psucc fuel.
-Proof. by []. Qed.
-
-Definition success_event : pred outcome := fun result =>
-  if result is GotPong then true else false.
+Proof. exact: ping_pongs_withSE. Qed.
 
 Definition success_of (run : M outcome) : M bool :=
   run >>= fun result => Ret (success_event result).
@@ -167,10 +177,6 @@ Definition ping_pong_success p : M bool := success_of (ping_pong p).
 
 Definition ping_pongs_success p fuel : M bool :=
   success_of (ping_pongs p fuel).
-
-Lemma success_eventE result :
-  success_event result = if result is GotPong then true else false.
-Proof. by case: result. Qed.
 
 Lemma success_ofE run :
   success_of run = (run >>= fun result => Ret (success_event result)).
