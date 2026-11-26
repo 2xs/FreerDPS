@@ -12,6 +12,7 @@ Unset Strict Implicit.
 Unset Printing Implicit Defensive.
 
 Local Abbreviation R := Rdefinitions.R.
+Local Abbreviation FlipEff := (@FlipEff R).
 
 Local Open Scope monae_scope.
 Local Open Scope proba_monad_scope.
@@ -27,12 +28,12 @@ Local Open Scope reals_ext_scope.
 Import NetworkChannelMod ccm scm.
 
 Definition flip_promise (ns : net_state) :
-    forall X, @FlipEff R X -> X -> Prop :=
-  fun X cmd => match cmd in FlipEff X return X -> Prop with
+    forall X, FlipEff X -> X -> Prop :=
+  fun X cmd => match cmd with
   | flipe q => fun b => ((q == 1%:i01) ==> b) /\ ((q == 0%:i01) ==> ~~ b)
   end.
 
-Definition flip_c : contract (@FlipEff R) net_state :=
+Definition flip_c : contract FlipEff net_state :=
   make_contract const_witness no_requirement flip_promise.
 
 Inductive queue := ToServer | ToClient.
@@ -65,7 +66,7 @@ Definition network_c : contract NETWORK net_state :=
 Lemma chan_inv_drop q ns : chan_inv ns -> chan_inv (drop_queue q ns).
 Proof. by case: q; case; split=> //; apply/eqP. Qed.
 
-Definition link_c {LinkF : effect} `{NETWORK ;; @FlipEff R -<< LinkF} :
+Definition link_c {LinkF : effect} `{NETWORK ;; FlipEff -<< LinkF} :
     contract LinkF net_state :=
   network_c -^- flip_c.
 
@@ -75,12 +76,12 @@ Proof.
 by move=> s x s' _ [-> _]; case: cmd x=> q x /=; exact: chan_inv_drop.
 Qed.
 
-Lemma flip_handler_preserves_inv X (cmd : @FlipEff R X) :
+Lemma flip_handler_preserves_inv X (cmd : FlipEff X) :
   preserves_invariant chan_inv (hoare_of_contract flip_c cmd).
 Proof. by move=> s x s' _ [-> _] /= inv. Qed.
 
 Lemma link_handler_preserves_inv {LinkF : effect}
-    `{NETWORK ;; @FlipEff R -<< LinkF} X (cmd : LinkF X) :
+    `{NETWORK ;; FlipEff -<< LinkF} X (cmd : LinkF X) :
   preserves_invariant chan_inv (hoare_of_contract link_c cmd).
 Proof.
 apply: shared_preserves_invariant.
@@ -89,21 +90,20 @@ exact: flip_handler_preserves_inv.
 Qed.
 
 Section transmit.
-Context {Fx : effect} `{NETWORK ;; @FlipEff R -<< Fx} {M : freerMonad Fx}.
+Context {Fx : effect} `{NETWORK ;; FlipEff -<< Fx} {M : freerMonad Fx}.
 Context (p : {prob R}).
 
 Definition drop_packet (q : queue) : M unit := ptrigger (DROP q).
 
-(** The packet in [q] is lost with probability [p], kept with [1 - p]. *)
 Definition transmit (q : queue) : M unit :=
   flip p >>= fun lost => when lost (drop_packet q).
 End transmit.
 
 Section link_syntax.
-Context {Fx : effect} `{NETWORK ;; @FlipEff R -<< Fx} {M : freerMonad Fx}.
+Context {Fx : effect} `{NETWORK ;; FlipEff -<< Fx} {M : freerMonad Fx}.
 Context (p : {prob R}).
 
-Lemma syn_flip : providesOnlyF (F := @FlipEff R) (flip p : M bool).
+Lemma syn_flip : providesOnlyF (F := FlipEff) (flip p : M bool).
 Proof. by exists (frTrigger (flipe p)). Qed.
 
 Lemma syn_drop_packet q :
@@ -114,7 +114,7 @@ End link_syntax.
 
 (* We split because of the provideT we will go through *)
 Section transmit_syntax.
-Context {LinkF Fx : effect} `{Hlink : NETWORK ;; @FlipEff R -<< LinkF}.
+Context {LinkF Fx : effect} `{Hlink : NETWORK ;; FlipEff -<< LinkF}.
 Context `{HL : LinkF -< Fx} {M : freerMonad Fx} (p : {prob R}).
 Lemma syn_transmit q :
   providesOnlyF (F := LinkF)
@@ -136,7 +136,7 @@ End transmit_syntax.
   solve [exact: syn_transmit] : core.
 
 Section transmit_s.
-Context {Fx : effect} `{NETWORK ;; @FlipEff R -<< Fx} {M : freerMonad Fx}.
+Context {Fx : effect} `{NETWORK ;; FlipEff -<< Fx} {M : freerMonad Fx}.
 Context (p : {prob R}) (q : queue).
 
 Lemma pre_transmit ns :
@@ -149,7 +149,6 @@ case: lost=> //=; rewrite freer_contract_left //.
 by rewrite pre_to_hoare_triggerP.
 Qed.
 
-(** [transmit] either keeps the packet or drops it. *)
 Lemma post_transmit ns u ns' :
   post (link_c |~ (transmit p q : M unit)) ns u ns' ->
   ns' = ns \/ ns' = drop_queue q ns.
@@ -164,7 +163,7 @@ Qed.
 End transmit_s.
 
 Section lossy_client.
-Context {LinkF Fx : effect} `{Hlink : NETWORK ;; @FlipEff R -<< LinkF}.
+Context {LinkF Fx : effect} `{Hlink : NETWORK ;; FlipEff -<< LinkF}.
 Context `{Hcl : client_api ;; LinkF -<< Fx}.
 Context {M : inductiveFreerMonad Fx} (p : {prob R}).
 
@@ -214,7 +213,6 @@ move=> t ns' run; split=> //.
 by apply: (lossy_client_run_preserves_inv _ run inv); exact: pre_lossy_client.
 Qed.
 
-(** [ASK] leaves [clientQ] untouched. *)
 Lemma lossy_ask_run ns u ns' :
   post (lossy_client_c |~ lossy_client ASK) ns u ns' ->
   clientQ ns' = clientQ ns.
@@ -237,7 +235,7 @@ Qed.
 End lossy_client.
 
 Section lossy_server.
-Context {LinkF Fx : effect} `{Hlink : NETWORK ;; @FlipEff R -<< LinkF}.
+Context {LinkF Fx : effect} `{Hlink : NETWORK ;; FlipEff -<< LinkF}.
 Context `{Hsv : server_api ;; LinkF -<< Fx}.
 Context {M : inductiveFreerMonad Fx} (p : {prob R}).
 
@@ -312,7 +310,7 @@ End lossy_server.
 
 Section lossy_protocol.
 Context {Link Apis ProtoF : effect}.
-Context `{Hlink : NETWORK ;; @FlipEff R -<< Link}.
+Context `{Hlink : NETWORK ;; FlipEff -<< Link}.
 Context `{Happ : client_api ;; server_api -<< Apis}.
 Context `{Hproto : Apis ;; Link -<< ProtoF}.
 Context {M : inductiveFreerMonad ProtoF} (p : {prob R}).
@@ -473,12 +471,12 @@ Import LossySpecs.
 
 Section shared_link.
 Context {Link Apis ProtoF : effect}.
-Context `{Hlink : NETWORK ;; @FlipEff R -<< Link}.
+Context `{Hlink : NETWORK ;; FlipEff -<< Link}.
 Context `{Happ : client_api ;; server_api -<< Apis}.
 Context `{Hproto : Apis ;; Link -<< ProtoF}.
 Context {N : probDrStateMonad R net_state}.
 
-Definition link_side : NETWORK ;; @FlipEff R -<< ProtoF :=
+Definition link_side : NETWORK ;; FlipEff -<< ProtoF :=
   strictProvideT _ _ _ _ Hlink Hproto.(p2).
 
 Variable res : net_state -> forall X, ProtoF X -> X.
