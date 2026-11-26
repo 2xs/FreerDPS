@@ -1,9 +1,8 @@
-From HB Require Import structures.
-From mathcomp Require Import boot boolp functions ssrnum ssralg.
+From mathcomp Require Import boot functions ssrnum ssralg.
 From mathcomp Require Import interval_inference.
-From mathcomp Require Import unstable reals Rstruct classical_sets.
+From mathcomp Require Import reals Rstruct.
 From infotheo Require Import realType_ext.
-From monae Require Import preamble hierarchy monad_lib proba_lib state_lib.
+From monae Require Import preamble hierarchy proba_lib state_lib.
 From FreerDPS Require Import all_freerdps ping_common ping_components.
 From FreerDPS Require Import prob_state.
 From FreerDPS Require Import prob_monad_ping.
@@ -502,7 +501,6 @@ Variable res : net_state -> forall X, ProtoF X -> X.
 Hypothesis res_compliant : @compliant R _ link_side.(p2) _ proto_c res.
 
 Local Abbreviation h := (@prob_handler R _ link_side.(p2) _ N proto_c res).
-Check inj.
 Lemma h_send m :
   h (@inj _ _ client_side.(p1) _ (SEND m)) =
   get >>= fun s => put (fill_serverQ m s) >> Ret tt.
