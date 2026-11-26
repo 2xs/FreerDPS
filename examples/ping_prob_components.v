@@ -83,7 +83,7 @@ Lemma link_handler_preserves_inv {LinkF : effect}
     `{NETWORK ;; @FlipEff R -<< LinkF} X (cmd : LinkF X) :
   preserves_invariant chan_inv (hoare_of_contract link_c cmd).
 Proof.
-apply: (shared_preserves_invariant (cf := network_c) (ce := flip_c)).
+apply: shared_preserves_invariant.
   exact: network_handler_preserves_inv.
 exact: flip_handler_preserves_inv.
 Qed.
@@ -118,12 +118,12 @@ Context {LinkF Fx : effect} `{Hlink : NETWORK ;; @FlipEff R -<< LinkF}.
 Context `{HL : LinkF -< Fx} {M : freerMonad Fx} (p : {prob R}).
 Lemma syn_transmit q :
   providesOnlyF (F := LinkF)
-    (@transmit _ (@strictProvideT _ _ _ _ Hlink HL) M p q).
+    (transmit p q : M unit).
 Proof.
 exists (frBind (frTrigger (inj (flipe p))) (fun lost =>
   if lost then frBind (frTrigger (inj (DROP q))) (fun=> frRet tt)
   else frRet tt)).
-rewrite /= /transmit; congr (_ >>= _).
+congr (_ >>= _).
 by apply: funext=> -[].
 Qed.
 End transmit_syntax.
@@ -168,17 +168,14 @@ Context {LinkF Fx : effect} `{Hlink : NETWORK ;; @FlipEff R -<< LinkF}.
 Context `{Hcl : client_api ;; LinkF -<< Fx}.
 Context {M : inductiveFreerMonad Fx} (p : {prob R}).
 
-Let link_side : NETWORK ;; @FlipEff R -<< Fx :=
-  @strictProvideT _ _ _ _ Hlink Hcl.(p2).
-
 Definition lossy_client : component (M := M) CLIENT Fx :=
   fun _ cmd => match cmd with
-  | ASK => send >> @transmit _ link_side M p ToServer
+  | ASK => send >> transmit p ToServer
   | ANSWER => answer
   end.
 
 Definition lossy_client_c : contract Fx net_state :=
-  client_c -^- @link_c LinkF Hlink.
+  client_c -^- link_c.
 
 Lemma pre_lossy_client T (cmd : CLIENT T) ns :
   chan_inv ns -> pre (lossy_client_c |~ lossy_client cmd) ns.
@@ -196,7 +193,7 @@ Qed.
 Lemma lossy_client_handler_preserves_inv X (cmd : Fx X) :
   preserves_invariant chan_inv (hoare_of_contract lossy_client_c cmd).
 Proof.
-apply: (shared_preserves_invariant (cf := client_c) (ce := link_c)).
+apply: shared_preserves_invariant.
   exact: (client_handler_preserves_inv (Fx:= client_api)).
 exact: link_handler_preserves_inv.
 Qed.
@@ -228,12 +225,11 @@ rewrite freer_contract_right // freer_contract_prodT.
 by case/post_transmit=> ->; rewrite /= ?clientQ_consume_serverQ.
 Qed.
 
-(** [ANSWER] empties [clientQ] and leaves [serverQ] untouched. *)
 Lemma lossy_answer_run ns r ns' :
   post (lossy_client_c |~ lossy_client ANSWER) ns r ns' ->
   clientQ ns' = None /\ serverQ ns' = serverQ ns.
 Proof.
-rewrite /= freer_contract_left // /answer /answer_of freer_to_hoare_bindE.
+rewrite freer_contract_left //= freer_to_hoare_bindE.
 case=> inc [ns1] [/wait_run [cQ sQ]].
 by case: inc=> [[]|]; rewrite post_ret=> -[_ <-].
 Qed.
@@ -245,11 +241,8 @@ Context {LinkF Fx : effect} `{Hlink : NETWORK ;; @FlipEff R -<< LinkF}.
 Context `{Hsv : server_api ;; LinkF -<< Fx}.
 Context {M : inductiveFreerMonad Fx} (p : {prob R}).
 
-Let link_side : NETWORK ;; @FlipEff R -<< Fx :=
-  @strictProvideT _ _ _ _ Hlink Hsv.(p2).
-
 Definition lossy_serve : M (option unit) :=
-  serve_of (fun=> recv) (reply >> @transmit _ link_side M p ToClient) tt.
+  serve_of (fun=> recv) (reply >> transmit p ToClient) tt.
 
 Definition lossy_server : component (M := M) SERVER Fx :=
   fun _ cmd => match cmd with
@@ -257,12 +250,12 @@ Definition lossy_server : component (M := M) SERVER Fx :=
   end.
 
 Definition lossy_server_c : contract Fx net_state :=
-  server_c -^- @link_c LinkF Hlink.
+  server_c -^- link_c.
 
 Lemma pre_lossy_server T (cmd : SERVER T) ns :
   chan_inv ns -> pre (lossy_server_c |~ lossy_server cmd) ns.
 Proof.
-case: cmd=> -[sQ_ok _] /=; rewrite /lossy_serve /serve_of freer_to_hoare_bindE.
+case: cmd=> -[sQ_ok _] /=; rewrite freer_to_hoare_bindE.
 rewrite freer_contract_left //; split; first by rewrite recv_respect.
 move=> [[]|] * /=; last 2 first.
 - by rewrite pre_ret.
@@ -278,7 +271,7 @@ Qed.
 Lemma lossy_server_handler_preserves_inv X (cmd : Fx X) :
   preserves_invariant chan_inv (hoare_of_contract lossy_server_c cmd).
 Proof.
-apply: (shared_preserves_invariant (cf := server_c) (ce := link_c)).
+apply: shared_preserves_invariant.
   exact: (server_handler_preserves_inv (Fx:= server_api)).
 exact: link_handler_preserves_inv.
 Qed.
@@ -303,7 +296,7 @@ Lemma lossy_serve_run ns r ns' :
   post (lossy_server_c |~ lossy_server SERVE) ns r ns' ->
   serverQ ns' = None /\ (r = None -> clientQ ns' = clientQ ns).
 Proof.
-rewrite /= /lossy_serve /serve_of freer_to_hoare_bindE freer_contract_left //.
+rewrite freer_to_hoare_bindE freer_contract_left //.
 case=> inc [ns1] [/recv_run [cQ sQ]].
 case: inc=> [[]|] /=; last 2 first.
 - by rewrite post_ret=> -[<- <-].
@@ -330,11 +323,10 @@ Definition server_side : server_api ;; Link -<< ProtoF :=
   strict_inner_right Happ Hproto.
 
 Definition lossy_contract : contract ProtoF net_state :=
-  (client_c -^- server_c : contract Apis net_state) -^- @link_c Link Hlink.
+  (client_c -^- server_c) -^- link_c.
 
 Definition lossy_ping : component (M := M) ping_round ProtoF :=
-  ping_with (@lossy_client _ _ Hlink client_side M p)
-    (@lossy_server _ _ Hlink server_side M p).
+  ping_with (lossy_client p) (lossy_server p).
 
 Lemma lossy_contract_client {U} (m : M U) :
   providesOnlyF (F := client_api) m -> (lossy_contract |~ m) = (client_c |~ m).
@@ -357,9 +349,8 @@ by move=> syn; rewrite freer_contract_right.
 Qed.
 
 Lemma lossy_client_contractE T (cmd : CLIENT T) :
-  (lossy_contract |~ @lossy_client _ _ Hlink client_side M p T cmd) =
-  (@lossy_client_c _ _ Hlink client_side |~
-    @lossy_client _ _ Hlink client_side M p T cmd).
+  (lossy_contract |~ lossy_client (M := M) p cmd) =
+  (lossy_client_c (Hcl := client_side) |~ lossy_client (M := M) p cmd).
 Proof.
 case: cmd=> /=; last first.
   by rewrite lossy_contract_client // freer_contract_left.
@@ -370,11 +361,10 @@ by rewrite lossy_contract_link // freer_contract_right.
 Qed.
 
 Lemma lossy_server_contractE T (cmd : SERVER T) :
-  (lossy_contract |~ @lossy_server _ _ Hlink server_side M p T cmd) =
-  (@lossy_server_c _ _ Hlink server_side |~
-    @lossy_server _ _ Hlink server_side M p T cmd).
+  (lossy_contract |~ lossy_server (M := M) p cmd) =
+  (lossy_server_c (Hsv := server_side) |~ lossy_server (M := M) p cmd).
 Proof.
-case: cmd=> /=; rewrite /lossy_serve /serve_of.
+case: cmd.
 rewrite [LHS]freer_to_hoare_bindE [RHS]freer_to_hoare_bindE.
 rewrite lossy_contract_server // [in RHS]freer_contract_left //.
 congr (_ >>= _); apply: funext=> -[[]|] /=; last 2 first.
@@ -390,36 +380,35 @@ by rewrite lossy_contract_link // freer_contract_right.
 Qed.
 
 Lemma lossy_client_shared_correct :
-  correct_component (@lossy_client _ _ Hlink client_side M p)
+  correct_component (lossy_client (M := M) p)
     (no_contract CLIENT) lossy_contract (fun=> chan_inv).
 Proof.
 by move=> *; rewrite lossy_client_contractE; exact: lossy_client_correct.
 Qed.
 
 Lemma lossy_server_shared_correct :
-  correct_component (@lossy_server _ _ Hlink server_side M p)
+  correct_component (lossy_server (M := M) p)
     (no_contract SERVER) lossy_contract (fun=> chan_inv).
 Proof.
 by move=> *; rewrite lossy_server_contractE; exact: lossy_server_correct.
 Qed.
 
 Local Abbreviation lossy_round := (round_with
-  (@lossy_client _ _ Hlink client_side M p)
-  (@lossy_server _ _ Hlink server_side M p)).
+  (lossy_client (M := M) p) (lossy_server p)).
 
-(** Whatever is lost, a round started on an empty network ends on one. *)
 Lemma post_lossy_round_empty n r n' :
   ping_inv n -> post (lossy_contract |~ lossy_round) n r n' -> ping_inv n'.
 Proof.
-move=> ->; rewrite /round_with /round_of freer_to_hoare_bindE.
+move=> ->; rewrite freer_to_hoare_bindE.
 case=> served [ns2] []; rewrite freer_to_hoare_bindE.
 case=> -[] [ns1] []; rewrite lossy_client_contractE=> /lossy_ask_run cQ1.
-rewrite lossy_server_contractE=> /lossy_serve_run [sQ2 cQ2].
-case: served cQ2=> [[]|] cQ2; last first.
-  rewrite post_ret=> -[_ <-]; move/(_ erefl): cQ2; rewrite cQ1 /=.
-  by case: ns2 sQ2=> ? ? /= -> ->.
-rewrite lossy_client_contractE=> /lossy_answer_run [cQ sQ].
-by case: n' cQ sQ sQ2=> ? ? /= -> -> ->.
+rewrite lossy_server_contractE=> /lossy_serve_run inv.
+case: served inv=> [[]|]inv;
+  last by rewrite post_ret=> -[_ <-];
+    move: cQ1 inv=> -> -[];
+    case: ns2=>?? /= -> ->.
+rewrite lossy_client_contractE=> /lossy_answer_run [].
+by case: n' inv=> ? ? /= [-> _] -> ->.
 Qed.
 
 Lemma post_lossy_ping_empty T n r n' (cmd : ping_round T) :
@@ -489,20 +478,16 @@ Context `{Happ : client_api ;; server_api -<< Apis}.
 Context `{Hproto : Apis ;; Link -<< ProtoF}.
 Context {N : probDrStateMonad R net_state}.
 
-Local Abbreviation client_side := (@client_side _ _ _ Happ Hproto).
-Local Abbreviation server_side := (@server_side _ _ _ Happ Hproto).
-
 Definition link_side : NETWORK ;; @FlipEff R -<< ProtoF :=
-  @strictProvideT _ _ _ _ Hlink Hproto.(p2).
-
-Local Abbreviation proto_c := (@lossy_contract _ _ _ Hlink Happ Hproto).
+  strictProvideT _ _ _ _ Hlink Hproto.(p2).
 
 Variable res : net_state -> forall X, ProtoF X -> X.
-Hypothesis res_compliant : @compliant R _ link_side.(p2) _ proto_c res.
+Hypothesis res_compliant : compliant (HF := link_side.(p2)) lossy_contract res.
 
-Local Abbreviation h := (@prob_handler R _ link_side.(p2) _ N proto_c res).
+Local Abbreviation h :=
+  (prob_handler (HF := link_side.(p2)) (N := N) lossy_contract res).
 Lemma h_send m :
-  h (@inj _ _ client_side.(p1) _ (SEND m)) =
+  h (inj (SEND m)) =
   get >>= fun s => put (fill_serverQ m s) >> Ret tt.
 Proof.
 rewrite prob_handler_unit; first exact: injK_None.
@@ -510,18 +495,18 @@ by bind_ext=> s; rewrite /= !injK_Some.
 Qed.
 
 Lemma h_wait :
-  h (@inj _ _ client_side.(p1) _ WAIT) =
+  h (inj WAIT) =
   get >>= fun s => put (consume_clientQ s) >> Ret (clientQ s).
 Proof.
 rewrite (prob_handler_promise (f := clientQ) res_compliant).
 - exact: injK_None.
-- move=> s r; rewrite /= /gen_promise !injK_Some /=.
-  by case=> -[+ _] _; rewrite /gen_promise injK_Some /= => /eqP.
+- move=> s r /=; rewrite /gen_promise !injK_Some.
+  by case=> -[+ _] _; rewrite /gen_promise injK_Some=> /eqP.
 - by bind_ext=> s; rewrite /= !injK_Some.
 Qed.
 
 Lemma h_reply m :
-  h (@inj _ _ server_side.(p1) _ (RPLY m)) =
+  h (inj (RPLY m)) =
   get >>= fun s => put (fill_clientQ m s) >> Ret tt.
 Proof.
 rewrite prob_handler_unit; first exact: injK_None.
@@ -529,31 +514,31 @@ by bind_ext=> s; rewrite /= !injK_Some injK_None.
 Qed.
 
 Lemma h_recv :
-  h (@inj _ _ server_side.(p1) _ RECV) =
+  h (inj RECV) =
   get >>= fun s => put (consume_serverQ s) >> Ret (serverQ s).
 Proof.
 rewrite (prob_handler_promise (f := serverQ) res_compliant).
 - exact: injK_None.
-- move=> s r; rewrite /= /gen_promise !injK_Some /=.
-  by case=> -[_ +] _; rewrite /gen_promise injK_Some => /eqP.
-by bind_ext=> s; rewrite /= /effect.injT !injK_Some injK_None.
+- move=> s r /=; rewrite /gen_promise !injK_Some.
+  by case=> -[_ +] _; rewrite /gen_promise injK_Some=> /eqP.
+by bind_ext=> s; rewrite /= !injK_Some injK_None.
 Qed.
 
 Lemma h_drop q :
-  h (@inj _ _ link_side.(p1) _ (DROP q)) =
+  h (inj (DROP q)) =
   get >>= fun s => put (drop_queue q s) >> Ret tt.
 Proof.
 rewrite prob_handler_unit; first exact: injK_None.
 by bind_ext=> s; rewrite /= injK_None !injK_Some.
 Qed.
 
-Lemma h_flip q : h (@inj _ _ link_side.(p2) _ (flipe q)) = bcoin q.
+Lemma h_flip q : h (inj (flipe q)) = bcoin q.
 Proof. exact: prob_handler_flip. Qed.
 
 Context (M : inductiveFreerMonad ProtoF) (p : {prob R}).
 
 Lemma put_transmit s q :
-  put s >> denote _ h _ (@transmit _ link_side M p q) =
+  put s >> denote _ h _ (transmit (M := M) p q) =
   put (drop_queue q s) <| p |> put s.
 Proof.
 rewrite denote_bind denote_trigger h_flip compE choice_bindDl !bindretf /=.
@@ -563,7 +548,7 @@ Qed.
 
 Lemma lossy_client_prob_correct :
   forall T (cmd : CLIENT T),
-    denote _ h _ (@lossy_client _ _ Hlink client_side M p _ cmd) =
+    denote _ h _ (lossy_client (M := M) p cmd) =
     spec_client p cmd.
 Proof.
 move=> _ [] /=;
@@ -575,7 +560,7 @@ Qed.
 
 Lemma lossy_server_prob_correct :
   forall T (cmd : SERVER T),
-    denote _ h _ (@lossy_server _ _ Hlink server_side M p _ cmd) =
+    denote _ h _ (lossy_server (M := M) p cmd) =
     spec_server p cmd.
 Proof.
 move=> _ [] /=; rewrite denote_bind denote_trigger h_recv bindA.
@@ -587,12 +572,11 @@ rewrite -bindA putput -bindA put_transmit.
 by congr (_ >>= _); apply: funext=> -[]; rewrite compE denote_ret.
 Qed.
 
-Local Abbreviation lossy_ping := (@lossy_ping _ _ _ Hlink Happ Hproto M p).
+Local Abbreviation lossy_ping := (lossy_ping (M := M) p).
 
 Lemma lossy_round_denote :
   denote _ h _
-    (round_with (@lossy_client _ _ Hlink client_side M p)
-      (@lossy_server _ _ Hlink server_side M p)) =
+    (round_with (lossy_client (M := M) p) (lossy_server p)) =
   round_of (spec_client p ASK) (fun=> spec_server p SERVE)
     (fun=> spec_client p ANSWER).
 Proof.
@@ -608,7 +592,7 @@ Lemma lossy_ping_distribution :
   put empty_net >> denote _ h _ (lossy_ping one_round) =
   put empty_net >> exchange_once (M := N) (choose := choice) p%:num.~%:i01.
 Proof.
-rewrite lossy_round_denote /round_of /exchange_once /exchange !bindA.
+rewrite lossy_round_denote /round_of !bindA.
 rewrite -bindA putgetput /= choiceC !choice_bindDl !choice_bindDr.
 rewrite -!bindA putput putgetput /= putput.
 rewrite !bindA !bindretf !choice_bindDl !choice_bindDr.
@@ -658,9 +642,9 @@ by rewrite -ping_pongs_successE ping_pong_retry_success_probability.
 Qed.
 
 Theorem lossy_ping_hoare_and_prob :
-  correct_component lossy_ping (no_contract ping_round) proto_c
+  correct_component lossy_ping (no_contract ping_round) lossy_contract
     (fun _ ns => chan_inv ns /\ ping_inv ns) /\
-  prob_correct_component (HF := link_side.(p2)) (N := N) lossy_ping proto_c res
+  prob_correct_component (N := N) lossy_ping lossy_contract res
     empty_net (ref_ping_pong p).
 Proof.
 split; first exact: lossy_ping_correct.

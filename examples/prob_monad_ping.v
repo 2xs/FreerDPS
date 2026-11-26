@@ -62,7 +62,7 @@ Lemma ping_pong_success_probability psucc :
   ping_pong_success (transmit:=transmit) psucc = bcoin (p_exchange_once psucc).
 Proof.
 rewrite ping_pong_successE success_ofE ping_pong_distribution.
-rewrite /exchange_once p_exchange_onceE /bcoin.
+rewrite p_exchange_onceE /bcoin.
 rewrite !choice_bindDl !bindretf !success_eventE.
 have [->/=|p0] := eqVneq psucc 0%:i01; first by rewrite p_of_0s !choice0.
 have [->/=|p1] := eqVneq psucc 1%:i01; first by rewrite p_of_1s choice1.
