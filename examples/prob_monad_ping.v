@@ -59,23 +59,16 @@ by rewrite !choice_bindDl !bindretf IH.
 Qed.
 
 Lemma ping_pong_success_probability psucc :
-  ping_pong_success (transmit:=transmit) (psucc%:num.~%:i01) =
-    bcoin (p_exchange_once (psucc%:num.~%:i01)).
+  ping_pong_success (transmit:=transmit) psucc = bcoin (p_exchange_once psucc).
 Proof.
-  rewrite ping_pong_successE success_ofE ping_pong_distribution.
-  rewrite /exchange_once p_exchange_onceE /bcoin
-          !choice_bindDl !bindretf !success_eventE.
-
-  set d := psucc%:num.~%:i01.
-  have [->/=|d0] := eqVneq d 0%:i01.
-  - by rewrite p_of_0s !choice0.
-  have [->/=|d1] := eqVneq d 1%:i01.
-  - by rewrite p_of_1s choice1.
-  have p1 : [p_of d, d] != 1%:i01 by rewrite p_of_rs1 (negbTE d1) andbF.
-  (* Give RHS the same form as LHS *)
-  rewrite -[Ret false in RHS](choicemm [q_of d, d]).
-
-  by rewrite choiceA (s_of_pqK p1) (r_of_pqK p1 d0).
+rewrite ping_pong_successE success_ofE ping_pong_distribution.
+rewrite p_exchange_onceE /bcoin.
+rewrite !choice_bindDl !bindretf !success_eventE.
+have [->/=|p0] := eqVneq psucc 0%:i01; first by rewrite p_of_0s !choice0.
+have [->/=|p1] := eqVneq psucc 1%:i01; first by rewrite p_of_1s choice1.
+have pp1 : [p_of psucc, psucc] != 1%:i01 by rewrite p_of_rs1 (negbTE p1) andbF.
+rewrite -[Ret false in RHS](choicemm [q_of psucc, psucc]).
+by rewrite choiceA (s_of_pqK pp1) (r_of_pqK pp1 p0).
 Qed.
 
 Lemma ping_pongs_success_stepE p fuel :
@@ -88,26 +81,20 @@ Proof.
   by rewrite success_eventE.
 Qed.
 
-Theorem ping_pong_retry_success_probability psucc (fuel : nat) :
-    ping_pongs_success (transmit:=transmit) (psucc%:num.~%:i01) fuel =
-      bcoin (p_exchanges (psucc%:num.~%:i01) fuel).
-  Proof.
-    elim : fuel => [|n].
-    - exact: ping_pong_success_probability.
+Lemma ping_pong_retry_success_probability psucc (fuel : nat) :
+  ping_pongs_success (transmit:=transmit) psucc fuel =
+    bcoin (p_exchanges psucc fuel).
+Proof.
+elim: fuel=> [|n]; first exact: ping_pong_success_probability.
 rewrite ping_pongs_success_stepE !p_exchangesE p_exchangeE p_exchange_onceE=> ->.
-    set d := psucc%:num.~%:i01.
-
-
-    have [->/=|d0] := eqVneq d 0%:i01.
-    - by rewrite p_of_0s s_of_0q choice0.
-    have [->/=|d1] := eqVneq d 1%:i01.
-    - by rewrite /bcoin p_of_1s s_of_1q !choice1.
-
-    rewrite -p_exchangesE -(bcoin_or_true [p_of d, d] (p_exchanges d n)).
-    have p1 : [p_of d, d] != 1%:i01 by rewrite p_of_rs1 (negbTE d1) andbF.
-    rewrite -[bcoin (p_exchanges d n) in RHS](choicemm [q_of d, d]).
-    by rewrite choiceA (s_of_pqK p1) (r_of_pqK p1 d0).
-  Qed.
-
-
+have [->/=|p0] := eqVneq psucc 0%:i01.
+  by rewrite p_of_0s s_of_0q choice0.
+have [->/=|p1] := eqVneq psucc 1%:i01.
+  by rewrite /bcoin p_of_1s s_of_1q !choice1.
+rewrite -p_exchangesE.
+rewrite -(bcoin_or_true [p_of psucc, psucc] (p_exchanges psucc n)).
+have pp1 : [p_of psucc, psucc] != 1%:i01 by rewrite p_of_rs1 (negbTE p1) andbF.
+rewrite -[bcoin (p_exchanges psucc n) in RHS](choicemm [q_of psucc, psucc]).
+by rewrite choiceA (s_of_pqK pp1) (r_of_pqK pp1 p0).
+Qed.
 End lossy_round_trip.

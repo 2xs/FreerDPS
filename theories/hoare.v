@@ -281,6 +281,31 @@ Qed.
 
 End WhenFacts.
 
+Section RetryFacts.
+Context {A : UU0} (stop : pred A) (run : M A).
+
+Lemma pre_retry_until (P : S -> Prop) :
+  (forall s, P s -> pre (c |~ run) s) ->
+  (forall s a s', P s -> post (c |~ run) s a s' -> P s') ->
+  forall fuel s, P s -> pre (c |~ retry_until stop run fuel) s.
+Proof.
+move=> run_pre run_post; elim=> [|fuel IH] s s_ok /=; first exact: run_pre.
+rewrite freer_to_hoare_bindE; split; first exact: run_pre.
+move=> a1 s1 /run_post=> /(_ s_ok).
+by case: (stop a1); [rewrite pre_ret | exact: IH].
+Qed.
+
+Lemma post_retry_until (P : S -> Prop) :
+  (forall s a s', P s -> post (c |~ run) s a s' -> P s') ->
+  forall fuel s a s', P s ->
+    post (c |~ retry_until stop run fuel) s a s' -> P s'.
+Proof.
+move=> run_post; elim=> [|fuel IH] s a s' s_ok /=; first exact: run_post.
+rewrite freer_to_hoare_bindE; case=> a1 [s1] [/run_post] => /( _ s_ok) ?.
+by case: (stop a1); [rewrite post_ret=> -[_ <-] | exact: IH].
+Qed.
+End RetryFacts.
+
 End GenericToHoareSection.
 
 Lemma to_hoare_preserves_invariant {Fx F : effect} `{F -<? Fx}

@@ -109,6 +109,27 @@ Definition compliant :=
   forall s X (cmd : Fx X), prj (F := @FlipEff R) cmd = None ->
     promise c s cmd (res s cmd).
 
+Lemma prob_handler_unit (cmd : Fx unit) :
+  prj (F := @FlipEff R) cmd = None ->
+  prob_handler cmd = get >>= fun s => put (state_update c s cmd tt) >> Ret tt.
+Proof.
+move/prob_handler_store=> ->; rewrite /store_op; bind_ext=> s.
+by case: (res s cmd).
+Qed.
+
+(** A non-flip command whose promise fixes its result to [f s]. *)
+Lemma prob_handler_promise X (cmd : Fx X) (f : S -> X) :
+  compliant -> prj (F := @FlipEff R) cmd = None ->
+  (forall s r, promise c s cmd r -> r = f s) ->
+  prob_handler cmd =
+  get >>= fun s => put (state_update c s cmd (f s)) >> Ret (f s).
+Proof.
+move=> res_ok flip0 promise_f; rewrite prob_handler_store // /store_op.
+bind_ext=> s.
+have H := res_ok s X cmd flip0.
+by have -> := promise_f s _ H.
+Qed.
+
 End prob_handler.
 
 Section freer_to_prob.

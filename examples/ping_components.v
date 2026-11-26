@@ -127,7 +127,10 @@ Proof. done. Qed.
 Opaque fill_serverQ fill_clientQ consume_clientQ consume_serverQ.
 
 Definition chan_inv ns := serverQ ns != Some Pong /\ clientQ ns != Some Ping.
-Lemma chan_inv_empty : chan_inv {| serverQ := None; clientQ := None |}.
+(** The network with both queues empty. *)
+Definition empty_net : net_state := {| serverQ := None; clientQ := None |}.
+
+Lemma chan_inv_empty : chan_inv empty_net.
 Proof. by split; apply/eqP. Qed.
 End NetworkChannelMod.
 
@@ -333,6 +336,8 @@ Qed.
 
 End c_inv_s.
 
+#[export] Hint Extern 0 (providesOnlyF answer) =>
+  solve [exact: (syn_client ANSWER)] : core.
 #[export] Hint Extern 0 (providesOnlyF (@client _ _ _ _ _)) =>
   solve [exact: syn_client] : core.
 
@@ -401,13 +406,14 @@ Lemma retry_ping_pong_ok (c : contract Fout net_state) (run : M outcome) :
     /\ forall t ns', post (c |~ retry_until success_event run fuel) ns t ns' ->
   chan_inv ns'.
 Proof.
-move=> run_ok; elim=> [|fuel IH] ns inv /=; first exact: run_ok.
-have [run_pre run_post] := run_ok ns inv.
-rewrite freer_to_hoare_bindE; split.
-- split=> // result ns1 /run_post inv1.
-  by case: result; [rewrite pre_ret | exact: (IH ns1 inv1).1 ..].
-- move=> t ns' [result [ns1 [/run_post inv1]]].
-  by case: result; [rewrite post_ret=> -[_ <-] | exact: (IH ns1 inv1).2 ..].
+move=> run_ok.
+have run_pre ns : chan_inv ns -> pre (c |~ run) ns by case/run_ok.
+have run_post ns t ns' :
+    chan_inv ns -> post (c |~ run) ns t ns' -> chan_inv ns'.
+  by case/run_ok=> _; exact.
+move=> fuel ns inv; split.
+  exact: pre_retry_until run_pre run_post _ _ inv.
+by move=> t ns'; exact: post_retry_until run_post _ _ _ _ inv.
 Qed.
 
 Definition ping_with (cl : component (M := M) CLIENT Fx)
@@ -471,7 +477,7 @@ Definition ping_inv ns := ns = {| serverQ := None; clientQ := None |}.
 
 Local Abbreviation round := (round_with (M := M) client server).
 
-Lemma post_round_empty n r n' :
+Lemma post_round n r n' :
   ping_inv n -> post (ping_contract |~ round) n r n' -> ping_inv n'.
 Proof.
 move=> ->; rewrite /round_with /round_of /= bindA.
@@ -485,23 +491,12 @@ case=> o [[s3 c3]] [] /wait_run /= [-> ->].
 by case: o=> [[]|]; rewrite post_ret=> -[_ <-].
 Qed.
 
-Lemma post_retry_empty n r n' fuel :
-  ping_inv n ->
-  post (ping_contract |~ retry_until success_event round fuel) n r n' ->
-  ping_inv n'.
-Proof.
-elim: fuel n=> [|fuel IH] n n_inv; first exact: post_round_empty.
-rewrite freer_to_hoare_bindE.
-case=> r1 [s1] [/(post_round_empty n_inv) s1_inv].
-by case: success_event; [rewrite post_ret=> -[_ <-] | exact: IH].
-Qed.
-
-Lemma post_ping_with_empty T n r n' (cmd : ping_round T) :
+Lemma post_ping_with T n r n' (cmd : ping_round T) :
   ping_inv n ->
   post (ping_contract |~ ping_with (M := M) client server cmd) n r n' ->
   ping_inv n'.
 Proof.
-by case: cmd r=> [|fuel] r; [exact: post_round_empty | exact: post_retry_empty].
+by case: cmd r=> [|fuel] r; last apply: post_retry_until; exact: post_round.
 Qed.
 
 End proto_empty.
@@ -532,15 +527,16 @@ move=> sin ns [cinv pinv] T cmd req.
 have [ping_pre ping_post] := ping_with_correct client_ping_correct
   server_ping_correct cinv req.
 split=> // t ns' run; have [_ cinv'] := ping_post t ns' run.
-by split=> //; split=> //; exact: post_ping_with_empty pinv run.
+by split=> //; split=> //; exact: post_ping_with pinv run.
 Qed.
 
 End proto_correct.
 
 (** * Probability of Success *)
 
-(**
-A ns transmission succeeds with probability [1 - p]. Packet losses are
+(** See [ping_prob_components.v] for the lossy version of these components.
+
+A transmission succeeds with probability [1 - p]. Packet losses are
 independent. For one round trip:
 
 <<
